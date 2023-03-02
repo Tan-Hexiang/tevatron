@@ -1,3 +1,7 @@
 .idea/
 __pycache__/
 *.egg-info/
+intermediate/
+data/
+intermediate_nq_train/
+model_nq/

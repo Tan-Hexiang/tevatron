@@ -4,7 +4,7 @@ In this doc, we use NQ as an example to show the replication of [DPR](https://gi
 
 ## Training
 ```bash
-python -m torch.distributed.launch --nproc_per_node=4 -m tevatron.driver.train \
+CUDA_VISIBLE_DEVICES=0 nohup python -m torch.distributed.launch --nproc_per_node=1 -m tevatron.driver.train \
   --output_dir model_nq \
   --model_name_or_path bert-base-uncased \
   --save_steps 20000 \
@@ -19,7 +19,7 @@ python -m torch.distributed.launch --nproc_per_node=4 -m tevatron.driver.train \
   --num_train_epochs 40 \
   --logging_steps 500 \
   --negatives_x_device \
-  --overwrite_output_dir
+  --overwrite_output_dir >log/dpr_nq_train.log 2>&1 &
 ```
 
 The above command train DPR with 4 GPUs.
@@ -42,7 +42,7 @@ CUDA_VISIBLE_DEVICES=0 python -m tevatron.driver.train \
   --num_train_epochs 40 \
   --logging_steps 500 \
   --grad_cache \
-  --overwrite_output_dir
+  --overwrite_output_dir 
 ```
 
 ### Un-tie model
@@ -57,7 +57,7 @@ mkdir $ENCODE_DIR
 for s in $(seq -f "%02g" 0 19)
 do
 python -m tevatron.driver.encode \
-  --output_dir=temp \
+  --output_dir=embs \
   --model_name_or_path model_nq \
   --fp16 \
   --per_device_eval_batch_size 156 \
@@ -71,25 +71,48 @@ done
 ### Encode Queries
 ```bash
 python -m tevatron.driver.encode \
-  --output_dir=temp \
+  --output_dir=data/query_embs \
   --model_name_or_path model_nq \
   --fp16 \
   --per_device_eval_batch_size 156 \
-  --dataset_name Tevatron/wikipedia-nq/test \
-  --encoded_save_path query_emb.pkl \
+  --dataset_name Tevatron/wikipedia-nq/train \
+  --encoded_save_path nq_train.pkl \
   --encode_is_qry
 ```
 
 ### Search
 ```bash
 python -m tevatron.faiss_retriever \
---query_reps query_emb.pkl \
---passage_reps 'corpus_emb.*.pkl' \
---depth 100 \
+--query_reps data/query_embs/query_emb.pkl \
+--passage_reps 'data/embs/corpus_emb.*.pkl' \
+--depth 1000 \
 --batch_size -1 \
 --save_text \
 --save_ranking_to run.nq.test.txt
 ```
+## Sharded Search
+As FAISS retrieval need to load corpus embeddings into memory, if the corpus embeddings are big, we can alternatively paralleize search over the shards.
+```bash
+INTERMEDIATE_DIR=intermediate
+mkdir ${INTERMEDIATE_DIR}
+for s in $(seq -f "%02g" 0 19)
+do
+  python -m tevatron.faiss_retriever \
+  --query_reps data/query_embs/query_emb.pkl \
+  --passage_reps data/embs/corpus_emb.${s}.pkl \
+  --depth 100 \
+  --save_ranking_to ${INTERMEDIATE_DIR}/${s}
+done
+```
+
+Then combine the results using the reducer module
+```bash
+python -m tevatron.faiss_retriever.reducer \
+--score_dir ${INTERMEDIATE_DIR} \
+--query data/query_embs/query_emb.pkl \
+--save_ranking_to run.nq.test.txt
+```
+
 
 ### Evaluation
 Convert result to trec format

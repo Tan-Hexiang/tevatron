@@ -67,7 +67,8 @@ class EncoderModel(nn.Module):
         self.pooler = pooler
         self.cross_entropy = nn.CrossEntropyLoss(reduction='mean')
         self.negatives_x_device = negatives_x_device
-        self.untie_encoder = untie_encoder
+        self.untie_encoder = untie_encoder # untile=True指query encoder and passage encoder do not share parameters,与原始论文中DPR一致
+
         if self.negatives_x_device:
             if not dist.is_initialized():
                 raise ValueError('Distributed training has not been initialized for representation all gather.')
@@ -170,11 +171,13 @@ class EncoderModel(nn.Module):
                     **hf_kwargs
                 )
             else:
+                # 共享参数的情况
                 lm_q = cls.TRANSFORMER_CLS.from_pretrained(model_args.model_name_or_path, **hf_kwargs)
                 lm_p = lm_q
         # load pre-trained
         else:
             lm_q = cls.TRANSFORMER_CLS.from_pretrained(model_args.model_name_or_path, **hf_kwargs)
+            # deepcopy后两者参数分离，直接赋值两者参数共享同时被更改
             lm_p = copy.deepcopy(lm_q) if model_args.untie_encoder else lm_q
 
         if model_args.add_pooler:

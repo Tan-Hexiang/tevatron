@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 from typing import Iterable, Tuple
 from numpy import ndarray
+import numpy
 from .__main__ import pickle_load, write_ranking
 
 
@@ -13,6 +14,7 @@ def combine_faiss_results(results: Iterable[Tuple[ndarray, ndarray]]):
         if rh is None:
             print(f'Initializing Heap. Assuming {scores.shape[0]} queries.')
             rh = faiss.ResultHeap(scores.shape[0], scores.shape[1])
+        indices = indices.astype(numpy.int64)
         rh.add_result(-scores, indices)
     rh.finalize()
     corpus_scores, corpus_indices = -rh.D, rh.I
@@ -28,6 +30,7 @@ def main():
     args = parser.parse_args()
 
     partitions = glob.glob(f'{args.score_dir}/*')
+    print("find files: {}".format(str(partitions)))
 
     corpus_scores, corpus_indices = combine_faiss_results(map(pickle_load, tqdm(partitions)))
 
