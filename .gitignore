@@ -2,7 +2,7 @@
 __pycache__/
 *.egg-info/
 intermediate/
-data*
+data_*
 intermediate*
 model_nq/
 model_trivia/
