@@ -141,7 +141,16 @@ $ python -m pyserini.eval.evaluate_dpr_retrieval \
 Top20	accuracy: 0.8002770083102493
 Top100	accuracy: 0.871191135734072
 ```
-
+## Convert to fid format
+```bash
+python -m tevatron.utils.format.convert_result_to_fid \
+--input data_nq/result/run.nq.train.txt \
+--output data_nq/result/run.nq.train.jsonl \
+--dataset_name Tevatron/wikipedia-nq/train \
+--depth 1000
+# --save_ctxs_text \
+# --corpus_name Tevatron/wikipedia-nq-corpus
+```
 ## Summary
 Using the process above should be able to obtain `top-k` retrieval accuracy as below:
 

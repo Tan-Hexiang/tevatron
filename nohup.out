@@ -1,0 +1,45 @@
+mkdir: 无法创建目录"embs": 文件已存在
+03/03/2023 22:31:12 - INFO - tevatron.modeling.encoder -   try loading tied weight
+03/03/2023 22:31:12 - INFO - tevatron.modeling.encoder -   loading model weight from model_trivia
+Traceback (most recent call last):
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/data/tanhexiang/tevatron/src/tevatron/driver/encode.py", line 111, in <module>
+    main()
+  File "/data/tanhexiang/tevatron/src/tevatron/driver/encode.py", line 69, in main
+    encode_dataset = HFCorpusDataset(tokenizer=tokenizer, data_args=data_args,
+  File "/data/tanhexiang/tevatron/src/tevatron/datasets/dataset.py", line 81, in __init__
+    self.dataset = load_dataset(data_args.dataset_name,
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/site-packages/datasets/load.py", line 1657, in load_dataset
+    builder_instance = load_dataset_builder(
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/site-packages/datasets/load.py", line 1494, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/site-packages/datasets/load.py", line 1204, in dataset_module_factory
+    raise e1 from None
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/site-packages/datasets/load.py", line 1171, in dataset_module_factory
+    raise ConnectionError(f"Couldn't reach '{path}' on the Hub ({type(e).__name__})")
+ConnectionError: Couldn't reach 'Tevatron/wikipedia-trivia-corpus' on the Hub (ConnectTimeout)
+03/03/2023 22:32:57 - INFO - tevatron.modeling.encoder -   try loading tied weight
+03/03/2023 22:32:57 - INFO - tevatron.modeling.encoder -   loading model weight from model_trivia
+Traceback (most recent call last):
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/data/tanhexiang/tevatron/src/tevatron/driver/encode.py", line 111, in <module>
+    main()
+  File "/data/tanhexiang/tevatron/src/tevatron/driver/encode.py", line 69, in main
+    encode_dataset = HFCorpusDataset(tokenizer=tokenizer, data_args=data_args,
+  File "/data/tanhexiang/tevatron/src/tevatron/datasets/dataset.py", line 81, in __init__
+    self.dataset = load_dataset(data_args.dataset_name,
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/site-packages/datasets/load.py", line 1657, in load_dataset
+    builder_instance = load_dataset_builder(
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/site-packages/datasets/load.py", line 1494, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/site-packages/datasets/load.py", line 1204, in dataset_module_factory
+    raise e1 from None
+  File "/home/sunfei/anaconda3/envs/tevatron/lib/python3.10/site-packages/datasets/load.py", line 1171, in dataset_module_factory
+    raise ConnectionError(f"Couldn't reach '{path}' on the Hub ({type(e).__name__})")
+ConnectionError: Couldn't reach 'Tevatron/wikipedia-trivia-corpus' on the Hub (ConnectTimeout)

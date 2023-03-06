@@ -13,22 +13,32 @@
 #   --encode_shard_index $s
 # done
 
+# encode query
+# CUDA_VISIBLE_DEVICES=1 python -m tevatron.driver.encode \
+#   --output_dir=data/query_embs \
+#   --model_name_or_path model_nq \
+#   --fp16 \
+#   --per_device_eval_batch_size 156 \
+#   --dataset_name Tevatron/wikipedia-nq/dev \
+#   --encoded_save_path nq_dev.pkl \
+#   --encode_is_qry
+
 # sharded search
-INTERMEDIATE_DIR=intermediate_nq_train
-mkdir ${INTERMEDIATE_DIR}
-for s in $(seq -f "%02g" 0 19)
-do
-  python -m tevatron.faiss_retriever \
-  --query_reps data/query_embs/nq_train.pkl \
-  --passage_reps data/embs/corpus_emb.${s}.pkl \
-  --depth 1000 \
-  --save_ranking_to ${INTERMEDIATE_DIR}/${s}
-done
+# INTERMEDIATE_DIR=intermediate_nq_dev
+# mkdir ${INTERMEDIATE_DIR}
+# for s in $(seq -f "%02g" 0 19)
+# do
+#   python -m tevatron.faiss_retriever \
+#   --query_reps data/query_embs/nq_dev.pkl \
+#   --passage_reps data/embs/corpus_emb.${s}.pkl \
+#   --depth 1000 \
+#   --save_ranking_to ${INTERMEDIATE_DIR}/${s}
+# done
 
 # python -m tevatron.faiss_retriever.reducer \
 # --score_dir ${INTERMEDIATE_DIR} \
-# --query data/query_embs/nq_train.pkl \
-# --save_ranking_to run.nq.train.txt
+# --query data/query_embs/nq_dev.pkl \
+# --save_ranking_to run.nq.dev.txt
 
 # encode train query
 # CUDA_VISIBLE_DEVICES=0 nohup python -m tevatron.driver.encode \
@@ -39,3 +49,26 @@ done
 #   --dataset_name Tevatron/wikipedia-nq/train \
 #   --encoded_save_path nq_train.pkl \
 #   --encode_is_qry > nq_train.log 2>&1 &
+
+# python -m tevatron.utils.format.convert_result_to_trec \
+#               --input run.nq.train.txt \
+#               --output run.nq.train.trec
+
+# python -m pyserini.eval.convert_trec_run_to_dpr_retrieval_run \
+#               --topics dpr-nq-train \
+#               --index wikipedia-dpr \
+#               --input run.nq.train.trec \
+#               --output run.nq.train.json
+
+# nohup python -m pyserini.eval.evaluate_dpr_retrieval \
+#                 --retrieval run.nq.train.json \
+#                 --topk 20 100 &
+
+
+python -m tevatron.utils.format.convert_result_to_fid \
+--input data_nq/result/run.nq.dev.txt \
+--output data_nq/result/fid.nq.dev.json \
+--dataset_nam Tevatron/wikipedia-nq/dev \
+--depth 1000
+# --save_ctxs_text \
+# --corpus_name Tevatron/wikipedia-nq-corpus
