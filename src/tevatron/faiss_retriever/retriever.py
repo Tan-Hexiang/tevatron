@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 class BaseFaissIPRetriever:
     def __init__(self, init_reps: np.ndarray):
         index = faiss.IndexFlatIP(init_reps.shape[1])
+        # gpu
+        res = faiss.StandardGpuResources()
+        index = faiss.index_cpu_to_gpu(res, 0, index)
         self.index = index
 
     def add(self, p_reps: np.ndarray):

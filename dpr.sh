@@ -24,24 +24,24 @@
 #   --encode_is_qry
 
 # 检索
-for split in dev train test:
+for split in dev train test
 do
     # sharded search
     INTERMEDIATE_DIR=intermediate_nq_${split}
     mkdir ${INTERMEDIATE_DIR}
-    for s in $(seq -f "%02g" 0 19)
+    for s in $(seq -f "%02g" 1 19)
     do
-        python -m tevatron.faiss_retriever \
+        CUDA_VISIBLE_DEVICES=0 python -m tevatron.faiss_retriever \
         --query_reps data_nq/query_embs/nq_${split}.pkl \
         --passage_reps data_nq/embs/corpus_emb.${s}.pkl \
         --depth 100 \
         --save_ranking_to ${INTERMEDIATE_DIR}/${s}
     done
 
-    python -m tevatron.faiss_retriever.reducer \
-    --score_dir ${INTERMEDIATE_DIR} \
-    --query data_nq/query_embs/nq_${split}.pkl \
-    --save_ranking_to data_nq/result100/run.nq.${split}.txt
+    # python -m tevatron.faiss_retriever.reducer \
+    # --score_dir ${INTERMEDIATE_DIR} \
+    # --query data_nq/query_embs/nq_${split}.pkl \
+    # --save_ranking_to data_nq/result100/run.nq.${split}.txt
 done
 
 # encode train query
