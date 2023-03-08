@@ -10,10 +10,15 @@ from .__main__ import pickle_load, write_ranking
 
 def combine_faiss_results(results: Iterable[Tuple[ndarray, ndarray]]):
     rh = None
+    i=0
     for scores, indices in results:
         if rh is None:
             print(f'Initializing Heap. Assuming {scores.shape[0]} queries.')
             rh = faiss.ResultHeap(scores.shape[0], scores.shape[1])
+            
+        print("{} has {} queries".format(i,scores.shape[0]))
+        i+=1
+
         indices = indices.astype(numpy.int64)
         rh.add_result(-scores, indices)
     rh.finalize()

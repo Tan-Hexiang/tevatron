@@ -29,10 +29,13 @@ def search_queries(retriever, q_reps, p_lookup, args):
 
 
 def write_ranking(corpus_indices, corpus_scores, q_lookup, ranking_save_file):
+    print("q_lookup : {}".format(len(q_lookup)))
     with open(ranking_save_file, 'w') as f:
         for qid, q_doc_scores, q_doc_indices in zip(q_lookup, corpus_scores, corpus_indices):
             score_list = [(s, idx) for s, idx in zip(q_doc_scores, q_doc_indices)]
             score_list = sorted(score_list, key=lambda x: x[0], reverse=True)
+            if int(qid)>=len(q_lookup):
+                print(f'{qid}\t{idx}\t{s}\n')
             for s, idx in score_list:
                 f.write(f'{qid}\t{idx}\t{s}\n')
 

@@ -3,6 +3,7 @@ from datasets import load_dataset
 import json
 import src.thx.jsonl
 import tqdm
+import pandas as pd
 
 parser = ArgumentParser()
 parser.add_argument('--input', type=str, required=True, help='txt files')
@@ -23,6 +24,7 @@ if args.save_ctxs_text and args.corpus_name:
     corpus = load_dataset(args.corpus_name)['train']
 # load datasets
 datasets = load_dataset(args.dataset_name)[args.dataset_split]
+datasets = pd.DataFrame(datasets)
 
 example = {}
 result = []
@@ -30,9 +32,10 @@ result = []
 with open(args.input, 'r') as in_f:
     for line in tqdm.tqdm(in_f):
         qid, docid, score = line.split()
-        question = datasets[int(qid)]['query']
-        answers = datasets[int(qid)]['answers']
-        
+        # question = datasets[int(qid)]['query']
+        # answers = datasets[int(qid)]['answers']
+        question = datasets.loc[datasets['query_id'] == qid].iloc[0]['query']
+        answers = datasets.loc[datasets['query_id'] == qid].iloc[0]['answers']
         if example=={}:
             example = {
                 'id':qid,
