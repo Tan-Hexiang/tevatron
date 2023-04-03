@@ -26,14 +26,15 @@ class MPreProcessor:
     def __call__(self, example):
         dpr_question = self.dpr_tokenizer.encode(example['question'],
                                                  add_special_tokens=False,
+                                                 pad_to_max_length=True,
                                                  max_length=self.data_args.dpr_query_len,
                                                  truncation=True)
         fid_answer = self.fid_tokenizer.encode_plus(example['answer'],
-                                               max_length=self.data_args.fid_target_len if self.data_args.fid_target_len > 0 else None,
-                                               pad_to_max_length=True,
-                                               return_tensors='pt',
-                                               truncation=True if self.answer_maxlength > 0 else False,
-                                               )
+                                                    max_length=self.data_args.fid_target_len if self.data_args.fid_target_len > 0 else None,
+                                                    pad_to_max_length=True,
+                                                    return_tensors='pt',
+                                                    truncation=True if self.answer_maxlength > 0 else False,
+                                                    )
         fid_answer_ids = fid_answer['input_ids']
         fid_answer_mask = fid_answer['attention_mask'].bool()
         fid_answer_ids = fid_answer_ids.masked_fill(~fid_answer_mask, -100)
@@ -48,6 +49,7 @@ class MPreProcessor:
             # dpr
             text = ctxs['title'] + ' ' + ctxs['text']
             dpr_passages.append(self.tokenizer.encode(text,
+                                                      pad_to_max_length=True,
                                                       add_special_tokens=False,
                                                       max_length=self.data_args.dpr_passage_len,
                                                       truncation=True))
@@ -121,6 +123,7 @@ class MTrainDataset(Dataset):
             padding=False,
             return_attention_mask=False,
             return_token_type_ids=False,
+            return_tensors='pt'
         )
         return item
 
@@ -153,10 +156,22 @@ class MTrainCollator:
         self.in_batch_negative = in_batch_negative
 
     def __call__(self, batch):
-        q = [x['question'] for x in batch]
+        q = [x['dpr_question'] for x in batch]
         q = torch.stack(q, dim=0)  # b*len
-        p = [x['passages'] for x in batch]
+        p = [x['dpr_passages'] for x in batch]
         p = torch.stack(p, dim=0)  # b*n*len
-        s = [x['scores'] for x in batch]
-        s = torch.stack(s, dim=0)  # b*n
-        return q, p, s
+        fid_a = [x['fid_answer_ids'] for x in batch]
+        fid_a = torch.stack(fid_a, dim=0)
+        fid_p_ids = [x['fid_passage_ids'] for x in batch]
+        fid_p_ids = torch.stack(fid_p_ids, dim=0)
+        fid_p_mask = [x['fid_passage_mask'] for x in batch]
+        fid_p_mask = torch.stack(fid_p_mask, dim=0)
+
+        return {
+            'dpr_question': q,  # bsz, len
+            'dpr_passages': p,  # bsz, n_context, len
+            'fid_answer_ids': fid_a,  # bsz, len
+            # 'fid_answer_mask': fid_answer_mask,
+            'fid_passage_ids': fid_p_ids,  # bsz, n_context, len
+            'fid_passage_mask': fid_p_mask
+        }

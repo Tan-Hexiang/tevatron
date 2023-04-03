@@ -48,15 +48,16 @@ class MTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False):
         # inputs 应该是q,p,(labels, context_ids, context_mask)
-        question, passages, (labels, context_ids, context_mask) = inputs
-        bsz, n_passages, dim = passages.size()
-        question_rep = model.encode_query(question)
-        passages_rep = model.encode_passage(passages.view(bsz*n_passages,-1))
+        dpr_q, dpr_p = inputs['dpr_question'], inputs['dpr_passages']
+        fid_a, fid_p_ids, fid_p_mask = inputs['fid_answer_ids'], inputs['fid_passage_ids'], inputs['fid_passage_mask']
+        bsz, n_context, dim = dpr_p.size()
+        question_rep = model.encode_query(dpr_q)
+        passages_rep = model.encode_passage(dpr_p.view(bsz*n_context,-1))
         # bsz, b_passages
         sim = torch.einsum(
             'bd,bid->bi',
             question_rep,
-            passages_rep.view(bsz, n_passages, -1)
+            passages_rep.view(bsz, n_context, -1)
         )
 
         dist = RectifiedStreched(
@@ -64,19 +65,19 @@ class MTrainer(Trainer):
         )
         # bsz, b_passages
         gates = dist.rsample()
-        expected_L0 = dist.log_expected_L0()
+        expected_l0 = dist.log_expected_L0()
         # scalar
-        loss_L0 = expected_L0.sum(-1).mean(-1)
+        loss_l0 = expected_l0.sum(-1).mean(-1)
 
         loss_ans, logits = fid_setter(
             model=self.fid,
-            passage_ids=context_ids,
-            passage_masks=context_mask,
-            target_ids=labels,
+            passage_ids=fid_p_ids,
+            passage_masks=fid_p_mask,
+            target_ids=fid_a,
             n_context=self.n_context,
             gates=gates,
             placeholder=model.placeholder
         )
-        loss = loss_ans + self.alpha*loss_L0
+        loss = loss_ans + self.alpha*loss_l0
         return loss
 

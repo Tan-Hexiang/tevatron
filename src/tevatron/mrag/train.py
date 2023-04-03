@@ -7,6 +7,7 @@ from transformers import AutoConfig, AutoTokenizer
 from transformers import (
     HfArgumentParser,
     set_seed,
+    T5Tokenizer,
 )
 
 from tevatron.arguments import TrainingArguments
@@ -65,7 +66,9 @@ def main():
         num_labels=num_labels,
         cache_dir=model_args.cache_dir,
     )
-    tokenizer = AutoTokenizer.from_pretrained(
+
+    fid_tokenizer = T5Tokenizer.from_pretrained('t5-base')
+    dpr_tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir
     )
@@ -76,12 +79,14 @@ def main():
         cache_dir=model_args.cache_dir,
     )
 
-    train_dataset = HFMTrainDataset(tokenizer=tokenizer, data_args=data_args,
-                                     cache_dir=data_args.data_cache_dir or model_args.cache_dir)
+    train_dataset = HFMTrainDataset(dpr_tokenizer=dpr_tokenizer,
+                                    fid_tokenizer=fid_tokenizer,
+                                    data_args=data_args,
+                                    cache_dir=data_args.data_cache_dir or model_args.cache_dir)
     if training_args.local_rank > 0:
         print("Waiting for main process to perform the mapping")
         torch.distributed.barrier()
-    train_dataset = MTrainDataset(data_args, train_dataset.process(), tokenizer)
+    train_dataset = MTrainDataset(data_args, train_dataset.process(), dpr_tokenizer)
     if training_args.local_rank == 0:
         print("Loading results from main process")
         torch.distributed.barrier()
@@ -99,7 +104,8 @@ def main():
     trainer.train()  # TODO: resume training
     trainer.save_model()
     if trainer.is_world_process_zero():
-        tokenizer.save_pretrained(training_args.output_dir)
+        dpr_tokenizer.save_pretrained(training_args.output_dir)
+        fid_tokenizer.save_pretrained(training_args.output_dir)
 
 
 if __name__ == "__main__":
