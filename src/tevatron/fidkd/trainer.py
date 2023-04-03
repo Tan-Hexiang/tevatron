@@ -2,6 +2,7 @@ import os
 from typing import Dict, List, Tuple, Optional, Any, Union
 
 from transformers.trainer import Trainer
+import torch.distributed as dist
 
 import torch
 from torch.utils.data import DataLoader
@@ -16,6 +17,7 @@ class KLTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super(KLTrainer, self).__init__(*args, **kwargs)
         self.loss_fct = torch.nn.KLDivLoss()
+        self._dist_loss_scale_factor = dist.get_world_size() if self.args.negatives_x_device else 1
 
     def _save(self, output_dir: Optional[str] = None):
         output_dir = output_dir if output_dir is not None else self.args.output_dir
@@ -41,12 +43,12 @@ class KLTrainer(Trainer):
         gold_score = torch.softmax(gold_score, dim=-1)
         score = torch.nn.functional.log_softmax(score, dim=-1)
         return self.loss_fct(score, gold_score)
-
-    def compute_loss(self, model, inputs):
+    
+    def compute_loss(self, model, inputs, return_outputs=False):
         question, passages, gold_scores = inputs
         bsz, n_passages, dim = passages.size()
-        question_rep = model.encode_query(question)
-        passages_rep = model.encode_passage(passages.view(bsz*n_passages,-1))
+        question_rep = model.module.encode_query({"input_ids":question})
+        passages_rep = model.module.encode_passage({"input_ids":passages.view(bsz*n_passages,-1)})
         sim = torch.einsum(
             'bd,bid->bi',
             question_rep,
@@ -54,4 +56,7 @@ class KLTrainer(Trainer):
         )
         loss = self.kldivloss(sim, gold_scores)
         return loss
+
+    def training_step(self, *args):
+        return super(KLTrainer, self).training_step(*args) / self._dist_loss_scale_factor
 

@@ -54,7 +54,8 @@ class KLPreProcessor:
 class HFKLTrainDataset:
     def __init__(self, tokenizer: PreTrainedTokenizer,
                        data_args: DataArguments):
-        self.dataset = load_dataset('json',data_args.dataset_name)
+        self.dataset = load_dataset('json',data_files=data_args.dataset_name)['train']
+        # print(self.dataset)
         self.preprocessor = KLPreProcessor
         self.tokenizer = tokenizer
         self.q_max_len = data_args.q_max_len
@@ -95,11 +96,12 @@ class KLTrainDataset(Dataset):
             text_encoding,
             truncation='only_first',
             max_length=self.data_args.q_max_len if is_query else self.data_args.p_max_len,
-            padding=False,
+            padding="max_length",
             return_attention_mask=False,
             return_token_type_ids=False,
+            return_tensors='pt'
         )
-        return item
+        return item.input_ids
 
 
     def __len__(self):
@@ -117,9 +119,9 @@ class KLTrainDataset(Dataset):
             encoded_passages.append(self.create_example(passage))
         encoded_passages = torch.stack(encoded_passages,dim=0)  # n_passages, dim
         return {
-            'question': encoded_question,   # dim
-            'passages': encoded_passages,   # n_passages, dim
-            'scores': torch.tensor(scores)  # n_passages
+            'question': encoded_question,   # tensor: dim
+            'passages': encoded_passages,   # tensor: n_passages, dim
+            'scores': torch.tensor(scores)  # tensor: n_passages
         }
 
 
@@ -129,9 +131,10 @@ class KLTrainCollator:
         self.in_batch_negative = in_batch_negative
     def __call__(self, batch):
         q = [x['question'] for x in batch]
-        q = torch.stack(q,dim=0)    # b*len
+        q = torch.stack(q,dim=0)    # b,len
         p = [x['passages'] for x in batch]
-        p = torch.stack(p,dim=0)    # b*n*len
+        p = torch.stack(p,dim=0)    # b,n,len
         s = [x['scores'] for x in batch]
-        s = torch.stack(s,dim=0)    # b*n
+        s = torch.stack(s,dim=0)    # b,n
+        logging.debug("batch shape: q {}, p {}, s {}".format(q.shape,p.shape,s.shape))
         return q,p,s

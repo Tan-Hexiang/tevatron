@@ -6,3 +6,4 @@ data_*
 intermediate*
 model_nq/
 model_trivia/
+model_kl/

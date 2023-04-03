@@ -14,13 +14,13 @@ from tevatron.arguments import TrainingArguments
 from tevatron.mrag.MRetriever import MDenseModel
 from tevatron.mrag.data import HFMTrainDataset, MPreProcessor, MTrainCollator, MTrainDataset
 from tevatron.mrag.Mtrainer import MTrainer
-from tevatron.mrag.arguments import MModelArguments, MArguments, MDataArguments
+from tevatron.mrag.arguments import MModelArguments, MTrainArguments, MDataArguments
 
 logger = logging.getLogger(__name__)
 
 
 def main():
-    parser = HfArgumentParser((MDataArguments, MModelArguments, TrainingArguments, MArguments))
+    parser = HfArgumentParser((MDataArguments, MModelArguments, TrainingArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
@@ -28,8 +28,8 @@ def main():
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
         model_args: MModelArguments
         data_args: MDataArguments
-        training_args: TrainingArguments
-        M_args: MArguments
+        training_args: MTrainArguments
+
 
     if (
             os.path.exists(training_args.output_dir)
@@ -68,10 +68,12 @@ def main():
     )
 
     fid_tokenizer = T5Tokenizer.from_pretrained('t5-base')
+
     dpr_tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir
     )
+    
     model = MDenseModel.build(
         model_args,
         training_args,

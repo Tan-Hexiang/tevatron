@@ -5,15 +5,15 @@ from tevatron.arguments import ModelArguments, TevatronTrainingArguments, DataAr
 
 @dataclass
 class KLDataArguments(DataArguments):
-    corpus: Optional[str] = field(
+    corpus: str = field(
         default=None, metadata={"help": "corpus name. used to find 'text' with id"}
     )
-    key_name: Optional[str] = field(
+    key_name: str = field(
         default='score', metadata={"help":"key name of ctxs"}
     )
-    depth: Optional[int] = field(
+    depth: int = field(
         default=100, metadata={"help": "ctxs num"}
     )
-    batch_negative: Optional[bool] = field(
+    batch_negative: bool = field(
         default=False, metadata={"help":"whether batch negative"}
     )
