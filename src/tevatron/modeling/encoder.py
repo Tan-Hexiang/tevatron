@@ -190,7 +190,7 @@ class EncoderModel(nn.Module):
             lm_p=lm_p,
             pooler=pooler,
             negatives_x_device=train_args.negatives_x_device,
-            untie_encoder=model_args.untie_encoder
+            untie_encoder=model_args.untie_encoder,
         )
         return model
 
