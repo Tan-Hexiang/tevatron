@@ -16,11 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class MTrainer(Trainer):
-    def __init__(self, fid: FiDT5, n_context:int, alpha:float, *args, **kwargs):
-        # freeze reader
-        self.fid = fid
-        for params in fid.parameters():
-            params.requires_grad = False
+    def __init__(self, n_context:int, alpha:float, *args, **kwargs):
         self.n_context = n_context
         self.alpha = alpha
 
@@ -51,8 +47,8 @@ class MTrainer(Trainer):
         dpr_q, dpr_p = inputs['dpr_question'], inputs['dpr_passages']
         fid_a, fid_p_ids, fid_p_mask = inputs['fid_answer_ids'], inputs['fid_passage_ids'], inputs['fid_passage_mask']
         bsz, n_context, dim = dpr_p.size()
-        question_rep = model.module.encode_query({"input_ids":dpr_q})
-        passages_rep = model.module.encode_passage({"input_ids":dpr_p.view(bsz*n_context,-1)})
+        question_rep = model.module.mdense.encode_query({"input_ids":dpr_q})
+        passages_rep = model.module.mdense.encode_passage({"input_ids":dpr_p.view(bsz*n_context,-1)})
         # bsz, b_passages
         sim = torch.einsum(
             'bd,bid->bi',
@@ -70,13 +66,13 @@ class MTrainer(Trainer):
         loss_l0 = expected_l0.sum(-1).mean(-1)
 
         loss_ans, logits = fid_setter(
-            model=self.fid,
+            model=model.module.fid,
             passage_ids=fid_p_ids,
             passage_masks=fid_p_mask,
             target_ids=fid_a,
             n_context=self.n_context,
             gates=gates,
-            placeholder=model.module.placeholder
+            placeholder=model.module.mdense.placeholder
         )
         loss = loss_ans + self.alpha*loss_l0
         return loss

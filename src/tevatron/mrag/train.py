@@ -10,7 +10,7 @@ from transformers import (
     T5Tokenizer,
 )
 from tevatron.mrag.fid import FiDT5
-from tevatron.mrag.MRetriever import MDenseModel
+from tevatron.mrag.MRetriever import MDenseModel,mrag
 from tevatron.mrag.data import HFMTrainDataset, MTrainCollator, MTrainDataset
 from tevatron.mrag.Mtrainer import MTrainer
 from tevatron.mrag.arguments import MModelArguments, MTrainArguments, MDataArguments
@@ -105,12 +105,13 @@ def main():
 
     # prepare fid 
     fid = FiDT5.from_pretrained(training_args.fid_path)
-
+    # prepare mrag model
+    m = mrag(fid, model)
+    
     trainer = MTrainer(
-        fid=fid,
         n_context=data_args.n_context,
         alpha=training_args.alpha,
-        model=model,
+        model=m,
         args=training_args,
         train_dataset=train_dataset,
         data_collator=MTrainCollator(
