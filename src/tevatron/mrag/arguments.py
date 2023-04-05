@@ -50,18 +50,21 @@ class MDataArguments(DataArguments):
     )
 @dataclass
 class MModelArguments(ModelArguments):
-    model_name_or_path: str = field(
-        default="/data/tanhexiang/tevatron/tevatron/model_nq", metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
-    )
     placeholder:  bool = field(
         default=True, metadata={"help": "learnable mask vector"}
     )
 
 @dataclass
 class MTrainArguments(TrainingArguments):
-    output_dir: str = field(
-        default="/data/tanhexiang/tevatron/tevatron/mrag_output", metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
+    # output_dir: str = field(
+    #     default="/data/tanhexiang/tevatron/tevatron/mrag_output", metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
+    # )
+    fid_path: str = field(
+        default="nq_reader_base"
     )
     alpha:  float = field(
         default=0.1, metadata={"help": "super params for balancing two loss"}
     )
+    warmup_ratio: float = field(default=0.1)
+    negatives_x_device: bool = field(default=False, metadata={"help": "share negatives across devices"})
+

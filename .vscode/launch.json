@@ -1,0 +1,30 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "Python: mrag/train.py",
+            "type": "python",
+            "request": "launch",
+            "module": "torch.distributed.launch",
+            "console": "integratedTerminal",
+            // "env": {"PYTHONPATH": "${workspaceRoot}"},
+            "args": ["--nproc_per_node", "1", "/data/tanhexiang/tevatron/tevatron/src/tevatron/mrag/train.py",
+            "--corpus","Tevatron/wikipedia-nq-corpus",
+            "--output_dir",  "/data/tanhexiang/tevatron/tevatron/mrag_output",
+            "--model_name_or_path", "/data/tanhexiang/tevatron/tevatron/model_nq",
+            "--save_steps", "20000",
+            "--dataset_name", "/data/tanhexiang/tevatron/tevatron/data_nq/result100/fid.nq.train.jsonl",
+            "--per_device_train_batch_size", "1",
+            "--learning_rate", "1e-5",
+            "--dpr_query_len", "32",
+            "--dpr_passage_len", "156",
+            "--num_train_epochs", "40",
+            "--logging_steps", "500",
+            "--overwrite_output_dir","--fp16"]
+        }
+    ]
+}

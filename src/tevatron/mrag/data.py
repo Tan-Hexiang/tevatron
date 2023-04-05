@@ -2,15 +2,11 @@ import random
 from dataclasses import dataclass
 from typing import List, Tuple
 import torch
-
-import datasets
-from datasets import load_dataset
 from torch.utils.data import Dataset
-from transformers import DataCollatorWithPadding, PreTrainedTokenizer, BatchEncoding
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from transformers import  PreTrainedTokenizer, BatchEncoding
 
 from tevatron.mrag.arguments import MDataArguments
-
+from datasets import load_dataset
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,20 +20,25 @@ class MPreProcessor:
         self.corpus = load_dataset(data_args.corpus)['train']
 
     def __call__(self, example):
+
         dpr_question = self.dpr_tokenizer.encode(example['question'],
                                                  add_special_tokens=False,
                                                  pad_to_max_length=True,
                                                  max_length=self.data_args.dpr_query_len,
                                                  truncation=True)
-        fid_answer = self.fid_tokenizer.encode_plus(example['answer'],
-                                                    max_length=self.data_args.fid_target_len if self.data_args.fid_target_len > 0 else None,
-                                                    pad_to_max_length=True,
-                                                    return_tensors='pt',
-                                                    truncation=True if self.answer_maxlength > 0 else False,
-                                                    )
+        # random sample an answer from answers list to train
+        answer = random.choice(example['answers']) + ' </s>'
+        fid_answer = self.fid_tokenizer.encode_plus(answer,
+                                        max_length=self.data_args.fid_target_len if self.data_args.fid_target_len > 0 else None,
+                                        pad_to_max_length=True,
+                                        return_tensors='pt',
+                                        truncation=True if self.data_args.fid_target_len > 0 else False,
+                                        )
+        
         fid_answer_ids = fid_answer['input_ids']
         fid_answer_mask = fid_answer['attention_mask'].bool()
         fid_answer_ids = fid_answer_ids.masked_fill(~fid_answer_mask, -100)
+        # logging.info("fid_answer_ids type {}".format(type(fid_answer_ids)))
 
         dpr_passages = []
         fid_passages = []
@@ -48,7 +49,7 @@ class MPreProcessor:
                 ctxs['title'] = self.corpus[int(ctxs['id']) - 1]['title']
             # dpr
             text = ctxs['title'] + ' ' + ctxs['text']
-            dpr_passages.append(self.tokenizer.encode(text,
+            dpr_passages.append(self.dpr_tokenizer.encode(text,
                                                       pad_to_max_length=True,
                                                       add_special_tokens=False,
                                                       max_length=self.data_args.dpr_passage_len,
@@ -67,8 +68,11 @@ class MPreProcessor:
             return_tensors='pt',
             truncation=True
         )
+        
         fid_passage_ids = fid_passages['input_ids'][None]
         fid_passage_mask = fid_passages['attention_mask'][None]
+        logging.info("fid_passage_ids type {}".format(type(fid_passage_ids)))
+        logging.info("fid_passage_mask type {}".format(type(fid_passage_mask)))
 
         return {
             'dpr_question': dpr_question,
@@ -85,20 +89,23 @@ class HFMTrainDataset:
                  fid_tokenizer: PreTrainedTokenizer,
                  data_args: MDataArguments):
         self.data_args = data_args
-        self.dataset = load_dataset('json', data_args.dataset_name)
-        self.preprocessor = MPreProcessor
-        self.dpr_tokenizer = fid_tokenizer
+        self.dataset = load_dataset('json', data_files=data_args.dataset_name)['train']
+        self.dpr_tokenizer = dpr_tokenizer
+        self.fid_tokenizer = fid_tokenizer
         self.proc_num = data_args.dataset_proc_num
+        self.preprocessor = MPreProcessor(self.dpr_tokenizer, self.fid_tokenizer, data_args=self.data_args)
 
     def process(self, shard_num=1, shard_idx=0):
         self.dataset = self.dataset.shard(shard_num, shard_idx)
         if self.preprocessor is not None:
+            # map does not return tensor type https://discuss.huggingface.co/t/dataset-map-return-only-list-instead-torch-tensors/15767
             self.dataset = self.dataset.map(
-                self.preprocessor(self.dpr_tokenizer, self.fid_tokenizer, data_args=self.data_args),
+                self.preprocessor,
                 batched=False,
                 num_proc=self.proc_num,
                 remove_columns=self.dataset.column_names,
                 desc="Running dpr/fid tokenizer on train dataset",
+                # load_from_cache_file=False,
             )
         return self.dataset
 
@@ -107,7 +114,7 @@ class MTrainDataset(Dataset):
     def __init__(
             self,
             data_args: MDataArguments,
-            dataset: datasets.Dataset,
+            dataset,
             dpr_tokenizer: PreTrainedTokenizer
     ):
         self.train_data = dataset
@@ -125,12 +132,12 @@ class MTrainDataset(Dataset):
             return_token_type_ids=False,
             return_tensors='pt'
         )
-        return item
+        return item.input_ids
 
     def __len__(self):
         return self.total_len
 
-    def __getitem__(self, item) -> Tuple[BatchEncoding, List[BatchEncoding], List[BatchEncoding]]:
+    def __getitem__(self, item):
         group = self.train_data[item]
         question = group['dpr_question']
         passages = group['dpr_passages']
@@ -143,10 +150,10 @@ class MTrainDataset(Dataset):
         return {
             'dpr_question': encoded_question,  # dim
             'dpr_passages': encoded_passages,  # n_passages, dim
-            'fid_answer_ids': group['fid_answer_ids'],
+            'fid_answer_ids': torch.Tensor(group['fid_answer_ids'][0]).type(torch.IntTensor),
             # 'fid_answer_mask': fid_answer_mask,
-            'fid_passage_ids': group['fid_passage_ids'],
-            'fid_passage_mask': group['fid_passage_mask']
+            'fid_passage_ids': torch.Tensor(group['fid_passage_ids'][0]).type(torch.IntTensor),
+            'fid_passage_mask': torch.Tensor(group['fid_passage_mask'][0]).type(torch.IntTensor)
         }
 
 

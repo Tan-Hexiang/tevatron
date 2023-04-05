@@ -184,14 +184,26 @@ class EncoderModel(nn.Module):
             pooler = cls.build_pooler(model_args)
         else:
             pooler = None
+        #  add placeholder for mrag
+        if model_args.placeholder:
+            model = cls(
+                placeholder=True,
+                lm_q=lm_q,
+                lm_p=lm_p,
+                pooler=pooler,
+                negatives_x_device=train_args.negatives_x_device,
+                untie_encoder=model_args.untie_encoder,
+            )
+        else:
+            model = cls(
+                placeholder=False,
+                lm_q=lm_q,
+                lm_p=lm_p,
+                pooler=pooler,
+                negatives_x_device=train_args.negatives_x_device,
+                untie_encoder=model_args.untie_encoder,
+            )
 
-        model = cls(
-            lm_q=lm_q,
-            lm_p=lm_p,
-            pooler=pooler,
-            negatives_x_device=train_args.negatives_x_device,
-            untie_encoder=model_args.untie_encoder,
-        )
         return model
 
     @classmethod
@@ -257,3 +269,5 @@ class EncoderModel(nn.Module):
             self.lm_q.save_pretrained(output_dir)
         if self.pooler:
             self.pooler.save_pooler(output_dir)
+
+        

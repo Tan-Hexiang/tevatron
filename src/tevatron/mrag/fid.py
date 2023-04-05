@@ -137,13 +137,13 @@ class EncoderWrapper(torch.nn.Module):
         self.encoder = encoder
         apply_checkpoint_wrapper(self.encoder, use_checkpoint)
 
-    def forward(self, input_ids=None, attention_mask=None, **kwargs, ):
+    def forward(self, input_ids=None, attention_mask=None, **kwargs ):
         # total_length = n_passages * passage_length
         bsz, total_length = input_ids.shape
         passage_length = total_length // self.n_passages  # 整数除法，返回不大于结果的一个最大的整数
         input_ids = input_ids.view(bsz * self.n_passages, passage_length)
         attention_mask = attention_mask.view(bsz * self.n_passages, passage_length)
-        outputs = self.encoder(input_ids, attention_mask, **kwargs)  # 相当于对每个passages单独编码
+        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask, **kwargs)  # 相当于对每个passages单独编码
         outputs = (outputs[0].view(bsz, self.n_passages * passage_length, -1),) + outputs[1:]
         return outputs
 

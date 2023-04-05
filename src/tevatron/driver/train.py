@@ -75,6 +75,7 @@ def main():
         config=config,
         cache_dir=model_args.cache_dir,
     )
+    
 
     train_dataset = HFTrainDataset(tokenizer=tokenizer, data_args=data_args,
                                    cache_dir=data_args.data_cache_dir or model_args.cache_dir)

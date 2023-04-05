@@ -9,18 +9,16 @@ from transformers import (
     set_seed,
     T5Tokenizer,
 )
-
-from tevatron.arguments import TrainingArguments
+from tevatron.mrag.fid import FiDT5
 from tevatron.mrag.MRetriever import MDenseModel
-from tevatron.mrag.data import HFMTrainDataset, MPreProcessor, MTrainCollator, MTrainDataset
+from tevatron.mrag.data import HFMTrainDataset, MTrainCollator, MTrainDataset
 from tevatron.mrag.Mtrainer import MTrainer
 from tevatron.mrag.arguments import MModelArguments, MTrainArguments, MDataArguments
 
 logger = logging.getLogger(__name__)
 
-
 def main():
-    parser = HfArgumentParser((MDataArguments, MModelArguments, TrainingArguments))
+    parser = HfArgumentParser((MModelArguments, MDataArguments, MTrainArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
@@ -62,29 +60,38 @@ def main():
 
     num_labels = 1
     config = AutoConfig.from_pretrained(
-        model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+        model_args.model_name_or_path,
         num_labels=num_labels,
         cache_dir=model_args.cache_dir,
     )
-
+    logging.info("loading fid and dpr tokenizer")
     fid_tokenizer = T5Tokenizer.from_pretrained('t5-base')
 
     dpr_tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir
     )
-    
+
+    logging.info("loading MdenseModel")
     model = MDenseModel.build(
         model_args,
         training_args,
         config=config,
-        cache_dir=model_args.cache_dir,
     )
+    # debug model 
+    logging.info("Model detail:")
+    for name, p in model.named_parameters():
+        if p.requires_grad:
+            # print("requires_grad: {}".format(name))
+            logging.info("requires_grad: {} {}".format(name, p.shape))
+        else:
+            logging.info("close grad of {}".format(name))
 
+    logging.info("loading dataset")
     train_dataset = HFMTrainDataset(dpr_tokenizer=dpr_tokenizer,
                                     fid_tokenizer=fid_tokenizer,
                                     data_args=data_args,
-                                    cache_dir=data_args.data_cache_dir or model_args.cache_dir)
+                                    )
     if training_args.local_rank > 0:
         print("Waiting for main process to perform the mapping")
         torch.distributed.barrier()
@@ -92,8 +99,17 @@ def main():
     if training_args.local_rank == 0:
         print("Loading results from main process")
         torch.distributed.barrier()
+    logging.info("dataset load completed!")
+    logging.info("Column_names of dataset:")
+    logging.info("{}".format(train_dataset.train_data.column_names))
+
+    # prepare fid 
+    fid = FiDT5.from_pretrained(training_args.fid_path)
 
     trainer = MTrainer(
+        fid=fid,
+        n_context=data_args.n_context,
+        alpha=training_args.alpha,
         model=model,
         args=training_args,
         train_dataset=train_dataset,
@@ -103,6 +119,7 @@ def main():
     )
     train_dataset.trainer = trainer
 
+    trainer.save_model()
     trainer.train()  # TODO: resume training
     trainer.save_model()
     if trainer.is_world_process_zero():

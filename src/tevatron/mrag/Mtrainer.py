@@ -51,8 +51,8 @@ class MTrainer(Trainer):
         dpr_q, dpr_p = inputs['dpr_question'], inputs['dpr_passages']
         fid_a, fid_p_ids, fid_p_mask = inputs['fid_answer_ids'], inputs['fid_passage_ids'], inputs['fid_passage_mask']
         bsz, n_context, dim = dpr_p.size()
-        question_rep = model.encode_query(dpr_q)
-        passages_rep = model.encode_passage(dpr_p.view(bsz*n_context,-1))
+        question_rep = model.module.encode_query({"input_ids":dpr_q})
+        passages_rep = model.module.encode_passage({"input_ids":dpr_p.view(bsz*n_context,-1)})
         # bsz, b_passages
         sim = torch.einsum(
             'bd,bid->bi',
@@ -76,7 +76,7 @@ class MTrainer(Trainer):
             target_ids=fid_a,
             n_context=self.n_context,
             gates=gates,
-            placeholder=model.placeholder
+            placeholder=model.module.placeholder
         )
         loss = loss_ans + self.alpha*loss_l0
         return loss

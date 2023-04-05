@@ -1,16 +1,14 @@
-CUDA_VISIBLE_DEVICES=0 nohup python -m torch.distributed.launch --nproc_per_node=1 -m tevatron.mrag.train \
-  --output_dir model_nq \
-  --model_name_or_path bert-base-uncased \
+CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nproc_per_node=1 -m tevatron.mrag.train \
+  --corpus Tevatron/wikipedia-nq-corpus \
+  --output_dir  /data/tanhexiang/tevatron/tevatron/mrag_output \
+  --model_name_or_path  /data/tanhexiang/tevatron/tevatron/model_nq \
   --save_steps 20000 \
-  --dataset_name Tevatron/wikipedia-nq \
+  --dataset_name /data/tanhexiang/tevatron/tevatron/data_nq/result100/fid.nq.train.jsonl \
   --fp16 \
-  --per_device_train_batch_size 32 \
-  --positive_passage_no_shuffle \
-  --train_n_passages 2 \
+  --per_device_train_batch_size 1 \
   --learning_rate 1e-5 \
-  --q_max_len 32 \
-  --p_max_len 156 \
+  --dpr_query_len 32 \
+  --dpr_passage_len 156 \
   --num_train_epochs 40 \
   --logging_steps 500 \
-  --negatives_x_device \
-  --overwrite_output_dir >log/dpr_nq_train.log 2>&1 &
+  --overwrite_output_dir
