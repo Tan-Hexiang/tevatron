@@ -55,6 +55,15 @@ class MTrainer(Trainer):
             question_rep,
             passages_rep.view(bsz, n_context, -1)
         )
+        # 控制初始score范围
+        # logging.info("sim: {}".format(str(sim)))
+        # sim = model.module.f(sim)* model.module.max_activation + model.module.bias
+
+        # minmax normalization then constrain to (-5,5)
+        MIN, MAX = 99, 132
+        sim = 10 * ( (sim - MIN)/(MAX - MIN) - 0.5 )
+        # logging.info("constrained sim: {}".format(str(sim)))
+
 
         dist = RectifiedStreched(
             BinaryConcrete(torch.full_like(sim, 0.2), sim), l=-0.2, r=1.0,
@@ -62,6 +71,8 @@ class MTrainer(Trainer):
         # bsz, b_passages
         gates = dist.rsample()
         expected_l0 = dist.log_expected_L0()
+        # logging.info("gates : {}".format(str(gates)))
+        # logging.info("l0: {}".format(expected_l0))
         # scalar
         loss_l0 = expected_l0.sum(-1).mean(-1)
 
@@ -74,6 +85,10 @@ class MTrainer(Trainer):
             gates=gates,
             placeholder=model.module.mdense.placeholder
         )
+        self.log({"loss_ans": float(loss_ans)})
+        self.log({"loss_l0":float(loss_l0)})
+
         loss = loss_ans + self.alpha*loss_l0
+        
         return loss
 

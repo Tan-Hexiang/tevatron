@@ -42,13 +42,17 @@ class MDenseModel(DenseModel):
             model.placeholder = torch.load(placeholder_path)
 
 class mrag(nn.Module):
-    def __init__(self, fid:FiDT5, mdense:MDenseModel) -> None:
+    def __init__(self, fid:FiDT5, mdense:MDenseModel, max_activation=10) -> None:
         super().__init__()
         self.fid = fid
         self.mdense = mdense
         # freeze fid
         for params in self.fid.parameters():
             params.requires_grad = False
+        #  constrain output range
+        self.bias = torch.nn.Parameter(torch.tensor(-5.0))
+        self.max_activation = max_activation
+        self.f = torch.nn.Tanh()
     # Trainer调用
     def save(self, output_dir: str):
         self.mdense.save(output_dir)

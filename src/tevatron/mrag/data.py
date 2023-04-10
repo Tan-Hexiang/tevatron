@@ -71,8 +71,8 @@ class MPreProcessor:
         
         fid_passage_ids = fid_passages['input_ids'][None]
         fid_passage_mask = fid_passages['attention_mask'][None]
-        logging.info("fid_passage_ids type {}".format(type(fid_passage_ids)))
-        logging.info("fid_passage_mask type {}".format(type(fid_passage_mask)))
+        # logging.info("fid_passage_ids type {}".format(type(fid_passage_ids)))
+        # logging.info("fid_passage_mask type {}".format(type(fid_passage_mask)))
 
         return {
             'dpr_question': dpr_question,
@@ -105,7 +105,7 @@ class HFMTrainDataset:
                 num_proc=self.proc_num,
                 remove_columns=self.dataset.column_names,
                 desc="Running dpr/fid tokenizer on train dataset",
-                # load_from_cache_file=False,
+                load_from_cache_file=True,
             )
         return self.dataset
 
@@ -150,10 +150,10 @@ class MTrainDataset(Dataset):
         return {
             'dpr_question': encoded_question,  # dim
             'dpr_passages': encoded_passages,  # n_passages, dim
-            'fid_answer_ids': torch.Tensor(group['fid_answer_ids'][0]).type(torch.IntTensor),
+            'fid_answer_ids': torch.Tensor(group['fid_answer_ids'][0]).type(torch.LongTensor),
             # 'fid_answer_mask': fid_answer_mask,
-            'fid_passage_ids': torch.Tensor(group['fid_passage_ids'][0]).type(torch.IntTensor),
-            'fid_passage_mask': torch.Tensor(group['fid_passage_mask'][0]).type(torch.IntTensor)
+            'fid_passage_ids': torch.Tensor(group['fid_passage_ids'][0]).type(torch.LongTensor),
+            'fid_passage_mask': torch.Tensor(group['fid_passage_mask'][0]).type(torch.FloatTensor)
         }
 
 

@@ -38,13 +38,18 @@ def main():
         raise ValueError(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
-
     # Setup logging
+    log_path = training_args.output_dir+"/run.log"
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO if training_args.local_rank in [-1, 0] else logging.WARN,
+        handlers=[logging.FileHandler(log_path, mode='w'),
+                              stream_handler]
     )
+
     logger.warning(
         "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
         training_args.local_rank,
