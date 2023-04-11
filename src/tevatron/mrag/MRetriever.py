@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class MDenseModel(DenseModel):
-    def __init__(self, placeholder=True, **kwargs):
+    def __init__(self, placeholder=False, **kwargs):
         super(MDenseModel, self).__init__(**kwargs)
         self.placeholder_flag = placeholder
         if placeholder:
@@ -47,8 +47,8 @@ class mrag(nn.Module):
         self.fid = fid
         self.mdense = mdense
         # freeze fid
-        for params in self.fid.parameters():
-            params.requires_grad = False
+        # for params in self.fid.parameters():
+        #     params.requires_grad = False
         #  constrain output range
         self.bias = torch.nn.Parameter(torch.tensor(-5.0))
         self.max_activation = max_activation
@@ -56,5 +56,8 @@ class mrag(nn.Module):
     # Trainer调用
     def save(self, output_dir: str):
         self.mdense.save(output_dir)
+
+    
+        
 
         

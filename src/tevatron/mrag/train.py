@@ -130,7 +130,7 @@ def main():
     trainer.save_model()
     if trainer.is_world_process_zero():
         dpr_tokenizer.save_pretrained(training_args.output_dir)
-        fid_tokenizer.save_pretrained(training_args.output_dir)
+        # fid_tokenizer.save_pretrained(training_args.output_dir)
 
 
 if __name__ == "__main__":
