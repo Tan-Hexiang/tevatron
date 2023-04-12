@@ -83,14 +83,6 @@ def main():
         training_args,
         config=config,
     )
-    # debug model 
-    logging.info("Model detail:")
-    for name, p in model.named_parameters():
-        if p.requires_grad:
-            # print("requires_grad: {}".format(name))
-            logging.info("requires_grad: {} {}".format(name, p.shape))
-        else:
-            logging.info("close grad of {}".format(name))
 
     logging.info("loading dataset")
     train_dataset = HFMTrainDataset(dpr_tokenizer=dpr_tokenizer,
@@ -111,17 +103,23 @@ def main():
     # prepare fid 
     fid = FiDT5.from_pretrained(training_args.fid_path)
     # prepare mrag model
-    m = mrag(fid, model)
-    
+    m = mrag(fid, model, n_context=data_args.n_context, alpha=training_args.alpha)
+    # debug model 
+    logging.info("Model detail:")
+    for name, p in m.named_parameters():
+        if p.requires_grad:
+            # print("requires_grad: {}".format(name))
+            logging.info("requires_grad: {} {}".format(name, p.shape))
+        else:
+            logging.info("close grad of {}".format(name))
+    # lookahead
     trainer = MTrainer(
-        n_context=data_args.n_context,
-        alpha=training_args.alpha,
         model=m,
         args=training_args,
         train_dataset=train_dataset,
         data_collator=MTrainCollator(
             in_batch_negative=data_args.batch_negative
-        ),
+        )
     )
     train_dataset.trainer = trainer
 

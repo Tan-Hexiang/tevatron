@@ -7,19 +7,21 @@ from ..modeling.dense import DenseModel
 from tevatron.mrag.fid import FiDT5
 from tevatron.arguments import ModelArguments, \
     TevatronTrainingArguments as TrainingArguments
+from tevatron.mrag.setter import fid_setter
+from tevatron.mrag.distributions import RectifiedStreched, BinaryConcrete
 
 logger = logging.getLogger(__name__)
 
 
 class MDenseModel(DenseModel):
-    def __init__(self, placeholder=False, **kwargs):
+    def __init__(self, placeholder=True, **kwargs):
         super(MDenseModel, self).__init__(**kwargs)
         self.placeholder_flag = placeholder
         if placeholder:
             self.placeholder = torch.nn.Parameter(
                 torch.nn.init.xavier_normal_(
                     torch.empty(1, 1, 768 * 200)
-                )
+                ), requires_grad=True
             )
         else:
             self.placeholder = torch.zeros((1, 1, 768 * 200)),
@@ -42,20 +44,72 @@ class MDenseModel(DenseModel):
             model.placeholder = torch.load(placeholder_path)
 
 class mrag(nn.Module):
-    def __init__(self, fid:FiDT5, mdense:MDenseModel, max_activation=10) -> None:
+    def __init__(self, fid:FiDT5, mdense:MDenseModel, n_context, alpha, max_activation=10) -> None:
         super().__init__()
+        self.n_context = n_context
+        self.alpha = alpha
         self.fid = fid
         self.mdense = mdense
         # freeze fid
-        # for params in self.fid.parameters():
-        #     params.requires_grad = False
+        for params in self.fid.parameters():
+            params.requires_grad = False
         #  constrain output range
-        self.bias = torch.nn.Parameter(torch.tensor(-5.0))
+        self.bias_out = torch.nn.Parameter(torch.tensor(-5.0), requires_grad=True)
+        self.bias_in = torch.nn.Parameter(torch.tensor(5.0), requires_grad=True)
         self.max_activation = max_activation
         self.f = torch.nn.Tanh()
+
     # Trainer调用
     def save(self, output_dir: str):
         self.mdense.save(output_dir)
+    
+    def forward(self, inputs):
+         # inputs 应该是q,p,(labels, context_ids, context_mask)
+        dpr_q, dpr_p = inputs['dpr_question'], inputs['dpr_passages']
+        fid_a, fid_p_ids, fid_p_mask = inputs['fid_answer_ids'], inputs['fid_passage_ids'], inputs['fid_passage_mask']
+        bsz, n_context, dim = dpr_p.size()
+        question_rep = self.mdense.encode_query({"input_ids":dpr_q})
+        passages_rep = self.mdense.encode_passage({"input_ids":dpr_p.view(bsz*n_context,-1)})
+        # bsz, b_passages
+        sim = torch.einsum(
+            'bd,bid->bi',
+            question_rep,
+            passages_rep.view(bsz, n_context, -1)
+        )
+        # 控制初始score范围
+        origin_sim = sim
+        # logging.info("sim: {}".format(str(sim)))
+        
+
+        # minmax normalization then constrain to (-10,10)
+        # MIN, MAX = 99, 132
+        MIN, MAX = torch.min(sim), torch.max(sim)
+        sim = 20 * ( (sim - MIN)/(MAX - MIN) - 0.5 ) + self.bias_in
+        # logging.info("constrained sim: {}".format(str(sim)))
+        # sim = self.f(sim)* self.max_activation + self.bias_out
+
+        dist = RectifiedStreched(
+            BinaryConcrete(torch.full_like(sim, 0.2), sim), l=-0.2, r=1.0,
+        )
+        # bsz, b_passages
+        gates = dist.rsample()
+        expected_l0 = dist.log_expected_L0().exp()
+        # logging.info("gates : {}".format(str(gates)))
+        # logging.info("l0: {}".format(expected_l0))
+        # scalar
+        loss_l0 = expected_l0.sum(-1).mean(-1)
+
+        loss_ans, logits = fid_setter(
+            model=self.fid,
+            passage_ids=fid_p_ids,
+            passage_masks=fid_p_mask,
+            target_ids=fid_a,
+            n_context=self.n_context,
+            gates=gates,
+            placeholder=self.mdense.placeholder
+        )
+        loss = loss_ans + self.alpha*loss_l0
+        return loss, loss_ans, loss_l0, origin_sim, gates
 
     
         
