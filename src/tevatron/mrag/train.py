@@ -9,11 +9,15 @@ from transformers import (
     set_seed,
     T5Tokenizer,
 )
+from transformers import (
+    get_constant_schedule_with_warmup,
+)
 from tevatron.mrag.fid import FiDT5
 from tevatron.mrag.MRetriever import MDenseModel,mrag
 from tevatron.mrag.data import HFMTrainDataset, MTrainCollator, MTrainDataset
 from tevatron.mrag.Mtrainer import MTrainer
 from tevatron.mrag.arguments import MModelArguments, MTrainArguments, MDataArguments
+from tevatron.mrag.lookahead import LookaheadRMSprop
 
 logger = logging.getLogger(__name__)
 
@@ -113,13 +117,18 @@ def main():
         else:
             logging.info("close grad of {}".format(name))
     # lookahead
+    optimizer = LookaheadRMSprop(m.parameters(), lr=training_args.learning_rate)
+    scheduler = get_constant_schedule_with_warmup(optimizer, 24 * 50)
+
     trainer = MTrainer(
         model=m,
         args=training_args,
         train_dataset=train_dataset,
         data_collator=MTrainCollator(
             in_batch_negative=data_args.batch_negative
-        )
+        ),
+        optimizers=(optimizer, scheduler)
+
     )
     train_dataset.trainer = trainer
 

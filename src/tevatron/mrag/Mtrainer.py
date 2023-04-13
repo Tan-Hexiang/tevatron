@@ -40,21 +40,22 @@ class MTrainer(Trainer):
         )
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        loss, loss_ans, loss_l0, origin_sim, gates = model(inputs)
+        loss, loss_ans, loss_l0, origin_sim, sim, gates = model(inputs)
         self.log({
                 "loss_ans": float(loss_ans), 
-                # "loss":float(loss),
+                "loss_step":float(loss),
                 "loss_l0":float(loss_l0),
                 "mean sim":float(torch.mean(origin_sim)),
                 "max sim":float(torch.max(origin_sim)),
                 "min sim":float(torch.min(origin_sim)),
+                "mean logits":float(torch.mean(sim)),
                 "mean gates":float(torch.mean(gates))
                 })
         return loss
 
     def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
         loss = super().training_step(model, inputs)
-        if (self.state.global_step % 200 == 0 or self.state.global_step<10) and self.state.global_step < 5000 :
+        if (self.state.global_step % 50 == 0 or self.state.global_step<10)  :
         #     # logging.info("print gradient png")
         #     # plot_grad_flow(model.module.named_parameters(), self.args.output_dir+"/gradient", self.state.global_step)
 
@@ -64,5 +65,10 @@ class MTrainer(Trainer):
                 logging.info(str(n))
                 logging.info(str(p.requires_grad))
                 logging.info(str(p.grad))
+                # if str(n) == 'mdense.lm_q.encoder.layer.0.attention.output.LayerNorm.weight':
+                if( p.requires_grad == True and p.grad is not None and 
+                   str(n)=='mdense.lm_q.encoder.layer.0.attention.output.LayerNorm.weight'
+                ):
+                    self.log({str(n):float(torch.mean(p.grad))})
         return loss
         

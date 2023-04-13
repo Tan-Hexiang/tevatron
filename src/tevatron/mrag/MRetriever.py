@@ -54,7 +54,7 @@ class mrag(nn.Module):
         for params in self.fid.parameters():
             params.requires_grad = False
         #  constrain output range
-        self.bias_out = torch.nn.Parameter(torch.tensor(-5.0), requires_grad=True)
+        self.bias_out = torch.nn.Parameter(torch.tensor(-10.0), requires_grad=True)
         self.bias_in = torch.nn.Parameter(torch.tensor(5.0), requires_grad=True)
         self.max_activation = max_activation
         self.f = torch.nn.Tanh()
@@ -109,7 +109,8 @@ class mrag(nn.Module):
             placeholder=self.mdense.placeholder
         )
         loss = loss_ans + self.alpha*loss_l0
-        return loss, loss_ans, loss_l0, origin_sim, gates
+        # loss = loss_ans
+        return loss, loss_ans, loss_l0, origin_sim, sim, gates
 
     
         
