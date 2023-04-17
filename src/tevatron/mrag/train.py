@@ -47,7 +47,7 @@ def main():
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(logging.INFO)
     logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+        format='%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO if training_args.local_rank in [-1, 0] else logging.WARN,
         handlers=[logging.FileHandler(log_path, mode='w'),
@@ -119,6 +119,7 @@ def main():
     # lookahead
     optimizer = LookaheadRMSprop(m.parameters(), lr=training_args.learning_rate)
     scheduler = get_constant_schedule_with_warmup(optimizer, 24 * 50)
+    logging.info("gpu memory:{}".format(torch.cuda.max_memory_allocated(0)))
 
     trainer = MTrainer(
         model=m,

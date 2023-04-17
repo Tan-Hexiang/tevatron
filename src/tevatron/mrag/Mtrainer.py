@@ -37,10 +37,14 @@ class MTrainer(Trainer):
             collate_fn=self.data_collator,
             drop_last=True,
             num_workers=self.args.dataloader_num_workers,
+            # shuffle=True,
         )
 
     def compute_loss(self, model, inputs, return_outputs=False):
+        if self.state.global_step < 10:
+            logging.info("inputs details: {}".format(inputs))
         loss, loss_ans, loss_l0, origin_sim, sim, gates = model(inputs)
+        logging.info("gpu memory:{}".format(torch.cuda.max_memory_allocated(0)))
         self.log({
                 "loss_ans": float(loss_ans), 
                 "loss_step":float(loss),
@@ -58,7 +62,7 @@ class MTrainer(Trainer):
         if (self.state.global_step % 50 == 0 or self.state.global_step<10)  :
         #     # logging.info("print gradient png")
         #     # plot_grad_flow(model.module.named_parameters(), self.args.output_dir+"/gradient", self.state.global_step)
-
+            logging.info("Before log grad gpu memory:{}".format(torch.cuda.max_memory_allocated(0)))
             logging.info("Step {}  Gradient".format(self.state.global_step))
             logging.info(" loss gradient {}  is_leaf {}".format(loss.grad, loss.is_leaf))
             for n, p in model.module.named_parameters():
@@ -66,9 +70,12 @@ class MTrainer(Trainer):
                 logging.info(str(p.requires_grad))
                 logging.info(str(p.grad))
                 # if str(n) == 'mdense.lm_q.encoder.layer.0.attention.output.LayerNorm.weight':
-                if( p.requires_grad == True and p.grad is not None and 
-                   str(n)=='mdense.lm_q.encoder.layer.0.attention.output.LayerNorm.weight'
-                ):
+                # if( p.requires_grad == True and p.grad is not None and 
+                #    str(n)=='mdense.lm_q.encoder.layer.0.attention.output.LayerNorm.weight'
+                # ):
+                if p.requires_grad == True and p.grad is not None:
                     self.log({str(n):float(torch.mean(p.grad))})
+            logging.info("After log grad gpu memory:{}".format(torch.cuda.max_memory_allocated(0)))
+
         return loss
         

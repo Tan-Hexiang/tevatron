@@ -1,0 +1,11 @@
+CUDA_VISIBLE_DEVICES=1,2,3 python -m torch.distributed.launch --nproc_per_node=3 -m tevatron.mrag.train_pl \
+  --output_dir  /data/tanhexiang/tevatron/414 \
+  --model_name_or_path  /data/tanhexiang/tevatron/model_nq \
+  --fid_path nq_reader_base \
+  --corpus Tevatron/wikipedia-nq-corpus \
+  --train_dataset /data/tanhexiang/tevatron/data_nq/result100/fid.nq.train.jsonl \
+  --val_dataset /data/tanhexiang/tevatron/data_nq/result100/fid.nq.val.jsonl \
+  --per_device_train_batch_size 1 \
+  --learning_rate 1e-5 \
+  --eps 1.0 \
+  --n_context 100

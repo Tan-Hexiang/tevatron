@@ -44,16 +44,17 @@ class MDenseModel(DenseModel):
             model.placeholder = torch.load(placeholder_path)
 
 class mrag(nn.Module):
-    def __init__(self, fid:FiDT5, mdense:MDenseModel, n_context, alpha, max_activation=10) -> None:
+    def __init__(self, fid:FiDT5, mdense:MDenseModel, n_context, eps, max_activation=10) -> None:
         super().__init__()
         self.n_context = n_context
-        self.alpha = alpha
+        self.eps = eps
         self.fid = fid
         self.mdense = mdense
         # freeze fid
         for params in self.fid.parameters():
             params.requires_grad = False
         #  constrain output range
+        self.alpha = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True)
         self.bias_out = torch.nn.Parameter(torch.tensor(-10.0), requires_grad=True)
         self.bias_in = torch.nn.Parameter(torch.tensor(5.0), requires_grad=True)
         self.max_activation = max_activation
@@ -64,7 +65,8 @@ class mrag(nn.Module):
         self.mdense.save(output_dir)
     
     def forward(self, inputs):
-         # inputs 应该是q,p,(labels, context_ids, context_mask)
+        logging.info("gpu memory:{}".format(torch.cuda.max_memory_allocated(0)))
+        # inputs 应该是q,p,(labels, context_ids, context_mask)
         dpr_q, dpr_p = inputs['dpr_question'], inputs['dpr_passages']
         fid_a, fid_p_ids, fid_p_mask = inputs['fid_answer_ids'], inputs['fid_passage_ids'], inputs['fid_passage_mask']
         bsz, n_context, dim = dpr_p.size()
@@ -76,15 +78,18 @@ class mrag(nn.Module):
             question_rep,
             passages_rep.view(bsz, n_context, -1)
         )
+        logging.info("dpr sim details: {}".format(sim))
         # 控制初始score范围
         origin_sim = sim
         # logging.info("sim: {}".format(str(sim)))
-        
+        logging.info("gpu memory:{}".format(torch.cuda.max_memory_allocated(0)))
 
         # minmax normalization then constrain to (-10,10)
         # MIN, MAX = 99, 132
         MIN, MAX = torch.min(sim), torch.max(sim)
+        assert (MAX-MIN)!=0
         sim = 20 * ( (sim - MIN)/(MAX - MIN) - 0.5 ) + self.bias_in
+        logging.info("sim details:{}".format(sim))
         # logging.info("constrained sim: {}".format(str(sim)))
         # sim = self.f(sim)* self.max_activation + self.bias_out
 
@@ -93,11 +98,14 @@ class mrag(nn.Module):
         )
         # bsz, b_passages
         gates = dist.rsample()
+        logging.info("gates: {}".format(gates))
         expected_l0 = dist.log_expected_L0().exp()
+        logging.info("l0: {}".format(expected_l0))
         # logging.info("gates : {}".format(str(gates)))
         # logging.info("l0: {}".format(expected_l0))
         # scalar
         loss_l0 = expected_l0.sum(-1).mean(-1)
+        logging.info("loss_l0:{}".format(loss_l0))
 
         loss_ans, logits = fid_setter(
             model=self.fid,
@@ -108,7 +116,16 @@ class mrag(nn.Module):
             gates=gates,
             placeholder=self.mdense.placeholder
         )
-        loss = loss_ans + self.alpha*loss_l0
+        logging.info("loss_ans {}".format(loss_ans))
+        logging.info("alpha {}".format(self.alpha))
+
+        loss = self.alpha*(loss_ans-self.eps) + loss_l0
+
+        logging.info("loss {}".format(loss))
+        logging.info("fid logits:{}".format(logits))
+
+
+        logging.info("gpu memory:{}".format(torch.cuda.max_memory_allocated(0)))
         # loss = loss_ans
         return loss, loss_ans, loss_l0, origin_sim, sim, gates
 

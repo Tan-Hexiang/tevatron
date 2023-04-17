@@ -14,7 +14,7 @@
             "env": {"CUDA_VISIBLE_DEVICES": "1"},
             "args": ["--nproc_per_node", "1", "/data/tanhexiang/tevatron/src/tevatron/mrag/train.py",
             "--corpus","Tevatron/wikipedia-nq-corpus",
-            "--output_dir",  "/data/tanhexiang/tevatron/mrag_output",
+            "--output_dir",  "413",
             "--model_name_or_path", "/data/tanhexiang/tevatron/model_nq",
             "--save_steps", "20000",
             "--dataset_name", "/data/tanhexiang/tevatron/data_nq/result100/fid.nq.train.jsonl",

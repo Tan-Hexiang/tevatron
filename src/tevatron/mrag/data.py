@@ -42,7 +42,7 @@ class MPreProcessor:
 
         dpr_passages = []
         fid_passages = []
-        for ctxs in example['ctxs']:
+        for ctxs in example['ctxs'][:self.data_args.n_context]:
             # 匹配正文
             if 'text' not in ctxs:
                 ctxs['text'] = self.corpus[int(ctxs['id']) - 1]['text']
@@ -61,6 +61,7 @@ class MPreProcessor:
             fid_passage = fid_question + ' ' + fid_passage
             fid_passages.append(fid_passage)
         # fid tokenizer
+        # logging.info("fid passages details: {}".format(fid_passages))
         fid_passages = self.fid_tokenizer.batch_encode_plus(
             fid_passages,
             max_length=self.data_args.fid_passage_len,
@@ -68,9 +69,12 @@ class MPreProcessor:
             return_tensors='pt',
             truncation=True
         )
+        # logging.info("fid passages tokenized details: {}".format(fid_passages))
         
         fid_passage_ids = fid_passages['input_ids'][None]
         fid_passage_mask = fid_passages['attention_mask'][None]
+        # logging.info("fid passages ids details: {}".format(fid_passage_ids))
+        # logging.info("fid passages mask details: {}".format(fid_passage_mask))
         # logging.info("fid_passage_ids type {}".format(type(fid_passage_ids)))
         # logging.info("fid_passage_mask type {}".format(type(fid_passage_mask)))
 
@@ -87,9 +91,11 @@ class MPreProcessor:
 class HFMTrainDataset:
     def __init__(self, dpr_tokenizer: PreTrainedTokenizer,
                  fid_tokenizer: PreTrainedTokenizer,
+                 data_path,
                  data_args: MDataArguments):
         self.data_args = data_args
-        self.dataset = load_dataset('json', data_files=data_args.dataset_name)['train']
+        self.dataset = load_dataset('json', data_files=data_path)['train']
+        logging.info("Datasets 前10个数据   {}".format(self.dataset[:10]))
         self.dpr_tokenizer = dpr_tokenizer
         self.fid_tokenizer = fid_tokenizer
         self.proc_num = data_args.dataset_proc_num
