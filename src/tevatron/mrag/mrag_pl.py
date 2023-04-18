@@ -12,24 +12,81 @@ from tevatron.mrag.data import HFMTrainDataset, MTrainCollator, MTrainDataset
 from tevatron.mrag.lookahead import LookaheadRMSprop
 from tevatron.mrag.data import MTrainCollator
 from torch.utils.data import DataLoader
-from tevatron.mrag.MRetriever import mrag
+from tevatron.mrag.fid import FiDT5
+from tevatron.mrag.MRetriever import MDenseModel
+import logging
+from tevatron.mrag.setter import fid_setter
+from tevatron.mrag.distributions import RectifiedStreched, BinaryConcrete
 
 class MaskRetrievalAugmentGeneration(pl.LightningModule):
-    def __init__(self, model:mrag, hparams, data_args, model_args):
+    def __init__(self, hparams, data_args, model_args):
         super().__init__()
         # https://lightning.ai/docs/pytorch/stable/model/manual_optimization.html
         self.automatic_optimization = False
-        self.model = model
         self.params = hparams
         # dataset
         self.data_args = data_args
         self.model_args = model_args
         # collactor
         self.data_collator = MTrainCollator(in_batch_negative=False)
-
+        # init mrag model
+        self.fid = FiDT5.from_pretrained(hparams.fid_path)
+        # freeze fid
+        for params in self.fid.parameters():
+            params.requires_grad = False
+        #  create mdense
+        config = AutoConfig.from_pretrained(self.model_args.model_name_or_path, num_labels=1, cache_dir=model_args.cache_dir,)
+        self.mdense = MDenseModel.build(model_args, hparams, config=config)
+        # other parameters
+        self.n_context = self.data_args.n_context
+        self.eps = self.params.eps
+        self.alpha = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True)
+        self.bias = torch.nn.Parameter(torch.tensor(5.0), requires_grad=True)
     
     def forward(self, inputs):
-        return self.model(inputs)
+        # inputs 应该是q,p,(labels, context_ids, context_mask)
+        dpr_q, dpr_p = inputs['dpr_question'], inputs['dpr_passages']
+        fid_a, fid_p_ids, fid_p_mask = inputs['fid_answer_ids'], inputs['fid_passage_ids'], inputs['fid_passage_mask']
+        bsz, n_context, dim = dpr_p.size()
+        question_rep = self.mdense.encode_query({"input_ids":dpr_q})
+        passages_rep = self.mdense.encode_passage({"input_ids":dpr_p.view(bsz*n_context,-1)})
+        # bsz, b_passages
+        sim = torch.einsum(
+            'bd,bid->bi',
+            question_rep,
+            passages_rep.view(bsz, n_context, -1)
+        )
+        # 控制初始score范围
+        origin_sim = sim
+
+        # minmax normalization then constrain to (-10,10)
+        # MIN, MAX = 99, 132
+        MIN, MAX = torch.min(sim), torch.max(sim)
+        sim = 20 * ( (sim - MIN)/(MAX - MIN + 0.000001) - 0.5 ) + self.bias
+        # logging.info("constrained sim: {}".format(str(sim)))
+        # sim = self.f(sim)* self.max_activation + self.bias_out
+
+        dist = RectifiedStreched(
+            BinaryConcrete(torch.full_like(sim, 0.2), sim), l=-0.2, r=1.0,
+        )
+        # bsz, b_passages
+        gates = dist.rsample()
+        expected_l0 = dist.log_expected_L0().exp()
+        # scalar
+        loss_l0 = expected_l0.sum(-1).mean(-1)
+
+        loss_ans, logits = fid_setter(
+            model=self.fid,
+            passage_ids=fid_p_ids,
+            passage_masks=fid_p_mask,
+            target_ids=fid_a,
+            n_context=self.n_context,
+            gates=gates,
+            placeholder=self.mdense.placeholder
+        )
+        loss = self.alpha*(loss_ans-self.eps) + loss_l0
+        # loss = loss_ans
+        return loss, loss_ans, loss_l0, self.alpha, origin_sim, sim, gates
     
     def setup(self, stage):
         # proxies = {'http': 'http://10.130.3.188:1087'}
@@ -81,16 +138,16 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         if local_rank == 0:
             print("Batch size: {}".format(batch['dpr_question'].shape[0]))
         optimizers = self.optimizers()
-        loss, loss_ans, loss_l0, alpha, origin_sim, sim, gates = self.model(batch)
+        loss, loss_ans, loss_l0, alpha, origin_sim, sim, gates = self(batch)
         # https://lightning.ai/docs/pytorch/stable/model/manual_optimization.html
         optimizers[0].zero_grad()
         optimizers[1].zero_grad()
         self.manual_backward(loss)
         # alpha梯度上升
-        self.model.alpha.grad *= -1
+        self.alpha.grad *= -1
         # clip gradients
-        self.clip_gradients(optimizers[0], gradient_clip_val=0.5, gradient_clip_algorithm="norm")
-        self.clip_gradients(optimizers[1], gradient_clip_val=0.5, gradient_clip_algorithm="norm")
+        self.clip_gradients(optimizers[0], gradient_clip_val=1, gradient_clip_algorithm="norm")
+        self.clip_gradients(optimizers[1], gradient_clip_val=1, gradient_clip_algorithm="norm")
         # step
         optimizers[0].step()
         optimizers[1].step()
@@ -108,8 +165,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 "loss_ans": float(loss_ans), 
                 "loss_step":float(loss),
                 "loss_l0":float(loss_l0),
-                "alpha value": float(self.model.alpha),
-                "alpha grad": float(self.model.alpha.grad),
+                "alpha value": float(self.alpha),
                 "mean sim":float(torch.mean(origin_sim)),
                 "max sim":float(torch.max(origin_sim)),
                 "min sim":float(torch.min(origin_sim)),
@@ -122,7 +178,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 self.log_dict({str(n):float(torch.mean(p.grad))}, logger=True)
 
     def validation_step(self, batch, batch_idx):
-        loss, loss_ans, loss_l0, alpha, _, _, _ = self.model(batch)
+        loss, loss_ans, loss_l0, alpha, _, _, _ = self(batch)
         metrics = {
                 "val_loss_ans": float(loss_ans), 
                 "val_loss_step":float(loss),
@@ -136,17 +192,17 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
             torch.optim.Adam(
                 params=[
                     {
-                        "params": self.model.mdense.parameters(),
+                        "params": self.mdense.parameters(),
                         "lr": self.params.learning_rate,
                     },
                     {
-                        "params": [self.model.bias],
+                        "params": [self.bias],
                         "lr": self.params.learning_rate,
                     },
                 ]
             ),
             torch.optim.Adam(
-                params=[self.model.alpha],
+                params=[self.alpha],
                 lr=self.params.learning_rate_alpha,
             ),
         ]
@@ -162,18 +218,18 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
     def on_train_epoch_end(self) -> None:
         output_dir = self.trainer.default_root_dir + '/mdense_at_epoch' + str(self.current_epoch)
         os.makedirs(output_dir, exist_ok=True)
-        self.model.mdense.save(output_dir=output_dir)
+        self.mdense.save(output_dir=output_dir)
         return super().on_train_epoch_end()
 
     def constrain_alpha(self):
             # 保证在0--200之间
-            self.model.alpha.data = torch.where(
-                self.model.alpha.data < 0,
-                torch.full_like(self.model.alpha.data, 0),
-                self.model.alpha.data,
+            self.alpha.data = torch.where(
+                self.alpha.data < 0,
+                torch.full_like(self.alpha.data, 0),
+                self.alpha.data,
             )
-            self.model.alpha.data = torch.where(
-                self.model.alpha.data > 200,
-                torch.full_like(self.model.alpha.data, 200),
-                self.model.alpha.data,
+            self.alpha.data = torch.where(
+                self.alpha.data > 200,
+                torch.full_like(self.alpha.data, 200),
+                self.alpha.data,
             )

@@ -36,24 +36,9 @@ def main():
         hparams: MTrainArguments
     
     set_seed(hparams.seed)
-
-    # prepare model
-    num_labels = 1
-    config = AutoConfig.from_pretrained(
-        model_args.model_name_or_path,
-        num_labels=num_labels,
-        cache_dir=model_args.cache_dir,
-    )
-    mdense = MDenseModel.build(
-        model_args,
-        hparams,
-        config=config,
-    )
-    fid = FiDT5.from_pretrained(hparams.fid_path)
-    m = mrag(fid, mdense, n_context=data_args.n_context, eps=hparams.eps)
     
     # get model
-    model = MaskRetrievalAugmentGeneration(m, 
+    model = MaskRetrievalAugmentGeneration(
                                            hparams=hparams, 
                                            data_args=data_args, 
                                            model_args=model_args)

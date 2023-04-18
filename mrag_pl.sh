@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=0,1 python src/tevatron/mrag/train_pl.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3 python src/tevatron/mrag/train_pl.py \
   --output_dir  /data/tanhexiang/tevatron/417_pl \
   --model_name_or_path  /data/tanhexiang/tevatron/model_nq \
   --fid_path nq_reader_base \
