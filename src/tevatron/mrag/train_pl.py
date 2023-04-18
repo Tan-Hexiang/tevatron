@@ -51,33 +51,20 @@ def main():
     )
     fid = FiDT5.from_pretrained(hparams.fid_path)
     m = mrag(fid, mdense, n_context=data_args.n_context, eps=hparams.eps)
-    # tokenizer
-    proxies = {'http': 'http://10.130.3.188:1087'}
-    print("Using proxy {}".format(proxies))
-    fid_tokenizer = T5Tokenizer.from_pretrained('t5-base', proxies=proxies)
-    dpr_tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, proxies=proxies)
-    # prepare dataset
-    train_dataset = HFMTrainDataset(data_path=data_args.train_dataset,
-                                    dpr_tokenizer=dpr_tokenizer,
-                                    fid_tokenizer=fid_tokenizer,
-                                    data_args=data_args,
-                                    )
-    val_dataset = HFMTrainDataset(data_path=data_args.val_dataset,
-                                    dpr_tokenizer=dpr_tokenizer,
-                                    fid_tokenizer=fid_tokenizer,
-                                    data_args=data_args,
-                                    )
-    if hparams.local_rank > 0:
-        print("Waiting for main process to perform the mapping")
-        torch.distributed.barrier()
-    train_dataset = MTrainDataset(data_args, train_dataset.process(), dpr_tokenizer)
-    val_dataset = MTrainDataset(data_args, val_dataset.process(), dpr_tokenizer)
     
     # get model
     model = MaskRetrievalAugmentGeneration(m, 
-                                           train_dataset=train_dataset, 
                                            hparams=hparams, 
-                                           val_dataset=val_dataset)
+                                           data_args=data_args, 
+                                           model_args=model_args)
+    # debug model
+    for name, p in model.named_parameters():
+        if p.requires_grad:
+            # print("requires_grad: {}".format(name))
+            print("requires_grad: {} {}".format(name, p.shape))
+        else:
+            print("close grad of {}".format(name))
+    # compiled_model = torch.compile(model)
     # log
     if not os.path.exists(hparams.output_dir):
         os.makedirs(hparams.output_dir, exist_ok=True)
@@ -86,7 +73,7 @@ def main():
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=hparams.output_dir+"/logs/")
     trainer = pl.Trainer(
-    accelerator="auto", strategy="auto", devices="auto",
+    accelerator="auto", strategy='ddp_find_unused_parameters_true', devices="auto",
     logger=tb_logger,
     default_root_dir=hparams.output_dir,
     precision='32',

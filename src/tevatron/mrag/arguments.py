@@ -63,7 +63,7 @@ class MModelArguments(ModelArguments):
     )
 
 @dataclass
-class MTrainArguments(TrainingArguments):
+class MTrainArguments():
     eps: float = field(
         default=1.0
     )
@@ -75,6 +75,8 @@ class MTrainArguments(TrainingArguments):
     fid_path: str = field(
         default="nq_reader_base"
     )
+    seed : int =field(default=1)
+    train_batch_size: int = field(default=1)
     dataloader_num_workers:int = field(default=32)
     warmup_ratio: float = field(default=0.1)
     negatives_x_device: bool = field(default=False, metadata={"help": "share negatives across devices"})

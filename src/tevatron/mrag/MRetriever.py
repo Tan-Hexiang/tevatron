@@ -56,8 +56,8 @@ class mrag(nn.Module):
         #  constrain output range
         self.alpha = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True)
         self.bias = torch.nn.Parameter(torch.tensor(5.0), requires_grad=True)
-        self.max_activation = max_activation
-        self.f = torch.nn.Tanh()
+        # self.max_activation = max_activation
+        # self.f = torch.nn.Tanh()
 
     # Trainer调用
     def save(self, output_dir: str):
@@ -86,8 +86,7 @@ class mrag(nn.Module):
         # minmax normalization then constrain to (-10,10)
         # MIN, MAX = 99, 132
         MIN, MAX = torch.min(sim), torch.max(sim)
-        assert (MAX-MIN)!=0
-        sim = 20 * ( (sim - MIN)/(MAX - MIN) - 0.5 ) + self.bias
+        sim = 20 * ( (sim - MIN)/(MAX - MIN + 0.000001) - 0.5 ) + self.bias
         logging.info("sim details:{}".format(sim))
         # logging.info("constrained sim: {}".format(str(sim)))
         # sim = self.f(sim)* self.max_activation + self.bias_out

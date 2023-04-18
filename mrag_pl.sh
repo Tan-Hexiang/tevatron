@@ -1,12 +1,12 @@
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun src/tevatron/mrag/train_pl.py \
+CUDA_VISIBLE_DEVICES=0,1 python src/tevatron/mrag/train_pl.py \
   --output_dir  /data/tanhexiang/tevatron/417_pl \
   --model_name_or_path  /data/tanhexiang/tevatron/model_nq \
   --fid_path nq_reader_base \
   --corpus Tevatron/wikipedia-nq-corpus \
   --train_dataset /data/tanhexiang/tevatron/data_nq/result100/fid.nq.train.jsonl \
   --val_dataset /data/tanhexiang/tevatron/data_nq/result100/fid.nq.dev.jsonl \
-  --per_device_train_batch_size 1 \
   --learning_rate 1e-5 \
   --learning_rate_alpha 1e-4 \
   --eps 1.0 \
-  --n_context 100
+  --n_context 100 \
+  --train_batch_size 1

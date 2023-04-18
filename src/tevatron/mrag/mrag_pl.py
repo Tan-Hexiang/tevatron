@@ -7,23 +7,52 @@ from transformers import (
     AutoTokenizer,
     T5Tokenizer
 )
+import os
+from tevatron.mrag.data import HFMTrainDataset, MTrainCollator, MTrainDataset
 from tevatron.mrag.lookahead import LookaheadRMSprop
 from tevatron.mrag.data import MTrainCollator
 from torch.utils.data import DataLoader
 from tevatron.mrag.MRetriever import mrag
 
 class MaskRetrievalAugmentGeneration(pl.LightningModule):
-    def __init__(self, model:mrag, train_dataset, hparams, val_dataset = None):
+    def __init__(self, model:mrag, hparams, data_args, model_args):
         super().__init__()
         # https://lightning.ai/docs/pytorch/stable/model/manual_optimization.html
         self.automatic_optimization = False
         self.model = model
         self.params = hparams
         # dataset
-        self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
+        self.data_args = data_args
+        self.model_args = model_args
         # collactor
         self.data_collator = MTrainCollator(in_batch_negative=False)
+
+    
+    def forward(self, inputs):
+        return self.model(inputs)
+    
+    def setup(self, stage):
+        # proxies = {'http': 'http://10.130.3.188:1087'}
+        # print("Using proxy {}".format(proxies))
+        fid_tokenizer = T5Tokenizer.from_pretrained('t5-base')
+        dpr_tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name_or_path)
+        # prepare dataset
+        train_dataset = HFMTrainDataset(data_path=self.data_args.train_dataset,
+                                        dpr_tokenizer=dpr_tokenizer,
+                                        fid_tokenizer=fid_tokenizer,
+                                        data_args=self.data_args,
+                                        )
+        val_dataset = HFMTrainDataset(data_path=self.data_args.val_dataset,
+                                        dpr_tokenizer=dpr_tokenizer,
+                                        fid_tokenizer=fid_tokenizer,
+                                        data_args=self.data_args,
+                                        )
+        self.train_dataset = MTrainDataset(self.data_args, train_dataset.process(), dpr_tokenizer)
+        self.val_dataset = MTrainDataset(self.data_args, val_dataset.process(), dpr_tokenizer)
+        world_size = os.environ.get('WORLD_SIZE')
+        node_rank = os.environ.get('NODE_RANK')
+        local_rank = os.environ.get('LOCAL_RANK')
+        print("Set dataset at : world_size {}  node_rank {} local_rank {}".format(world_size, node_rank, local_rank))
 
     def train_dataloader(self):
         return DataLoader(
@@ -48,6 +77,9 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
             )
 
     def training_step(self, batch, batch_idx):
+        local_rank = os.environ.get('LOCAL_RANK')
+        if local_rank == 0:
+            print("Batch size: {}".format(batch['dpr_question'].shape[0]))
         optimizers = self.optimizers()
         loss, loss_ans, loss_l0, alpha, origin_sim, sim, gates = self.model(batch)
         # https://lightning.ai/docs/pytorch/stable/model/manual_optimization.html
@@ -59,7 +91,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         # clip gradients
         self.clip_gradients(optimizers[0], gradient_clip_val=0.5, gradient_clip_algorithm="norm")
         self.clip_gradients(optimizers[1], gradient_clip_val=0.5, gradient_clip_algorithm="norm")
-
+        # step
         optimizers[0].step()
         optimizers[1].step()
 
@@ -76,7 +108,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 "loss_ans": float(loss_ans), 
                 "loss_step":float(loss),
                 "loss_l0":float(loss_l0),
-                "alpha": float(self.model.alpha),
+                "alpha value": float(self.model.alpha),
                 "alpha grad": float(self.model.alpha.grad),
                 "mean sim":float(torch.mean(origin_sim)),
                 "max sim":float(torch.max(origin_sim)),
@@ -85,7 +117,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 "mean gates":float(torch.mean(gates))
                 }, logger=True, prog_bar=True)
         
-        for n, p in self.model.mdense.named_parameters():
+        for n, p in self.named_parameters():
             if p.requires_grad == True and p.grad is not None:
                 self.log_dict({str(n):float(torch.mean(p.grad))}, logger=True)
 
@@ -96,7 +128,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 "val_loss_step":float(loss),
                 "val_loss_l0":float(loss_l0),
                 }
-        self.log_dict(metrics, logger=True, prog_bar=True)
+        self.log_dict(metrics, logger=True, prog_bar=True, sync_dist=True)
         return metrics
 
     def configure_optimizers(self):
@@ -126,6 +158,12 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
             get_constant_schedule(optimizers[1]),
         ]
         return optimizers, schedulers
+    
+    def on_train_epoch_end(self) -> None:
+        output_dir = self.trainer.default_root_dir + '/mdense_at_epoch' + str(self.current_epoch)
+        os.makedirs(output_dir, exist_ok=True)
+        self.model.mdense.save(output_dir=output_dir)
+        return super().on_train_epoch_end()
 
     def constrain_alpha(self):
             # 保证在0--200之间
