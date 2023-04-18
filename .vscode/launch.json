@@ -6,7 +6,7 @@
     "configurations": [
         
         {
-            "name": "Python: mrag/train.py",
+            "name": "Python: train.py",
             "type": "python",
             "request": "launch",
             "module": "torch.distributed.launch",
@@ -25,6 +25,28 @@
             "--num_train_epochs", "40",
             "--logging_steps", "500",
             "--overwrite_output_dir","--fp16"]
+        },
+        {
+            "name": "Python: train_pl.py",
+            "type": "python",
+            "request": "launch",
+            "program": "/data/tanhexiang/tevatron/src/tevatron/mrag/train_pl.py",
+            // "module": "torch.distributed.launch",
+            "console": "integratedTerminal",
+            "env": {"CUDA_VISIBLE_DEVICES": "0"},
+            "args": [
+            "--output_dir",  "417_pl",
+            "--model_name_or_path", "/data/tanhexiang/tevatron/model_nq",
+            "--fid_path", "nq_reader_base",
+            "--corpus","Tevatron/wikipedia-nq-corpus",
+            "--train_dataset", "/data/tanhexiang/tevatron/data_nq/result100/fid.nq.train.jsonl",
+            "--val_dataset", "/data/tanhexiang/tevatron/data_nq/result100/fid.nq.dev.jsonl",
+            "--per_device_train_batch_size", "1",
+            "--learning_rate", "1e-5",
+            "--learning_rate_alpha", "1e-4",
+            "--eps", "1.0",
+            "--n_context", "100"
+        ]
         }
     ]
 }

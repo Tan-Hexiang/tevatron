@@ -67,12 +67,15 @@ class MTrainArguments(TrainingArguments):
     eps: float = field(
         default=1.0
     )
+    learning_rate: float =field(default=1e-5)
+    learning_rate_alpha: float = field(default=1e-4)
     output_dir: str = field(
         default="/data/tanhexiang/tevatron/tevatron/mrag_output", metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     fid_path: str = field(
         default="nq_reader_base"
     )
+    dataloader_num_workers:int = field(default=32)
     warmup_ratio: float = field(default=0.1)
     negatives_x_device: bool = field(default=False, metadata={"help": "share negatives across devices"})
 

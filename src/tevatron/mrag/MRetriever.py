@@ -55,8 +55,7 @@ class mrag(nn.Module):
             params.requires_grad = False
         #  constrain output range
         self.alpha = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True)
-        self.bias_out = torch.nn.Parameter(torch.tensor(-10.0), requires_grad=True)
-        self.bias_in = torch.nn.Parameter(torch.tensor(5.0), requires_grad=True)
+        self.bias = torch.nn.Parameter(torch.tensor(5.0), requires_grad=True)
         self.max_activation = max_activation
         self.f = torch.nn.Tanh()
 
@@ -88,7 +87,7 @@ class mrag(nn.Module):
         # MIN, MAX = 99, 132
         MIN, MAX = torch.min(sim), torch.max(sim)
         assert (MAX-MIN)!=0
-        sim = 20 * ( (sim - MIN)/(MAX - MIN) - 0.5 ) + self.bias_in
+        sim = 20 * ( (sim - MIN)/(MAX - MIN) - 0.5 ) + self.bias
         logging.info("sim details:{}".format(sim))
         # logging.info("constrained sim: {}".format(str(sim)))
         # sim = self.f(sim)* self.max_activation + self.bias_out
@@ -127,7 +126,7 @@ class mrag(nn.Module):
 
         logging.info("gpu memory:{}".format(torch.cuda.max_memory_allocated(0)))
         # loss = loss_ans
-        return loss, loss_ans, loss_l0, origin_sim, sim, gates
+        return loss, loss_ans, loss_l0, self.alpha, origin_sim, sim, gates
 
     
         

@@ -1,4 +1,4 @@
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 from transformers import (
     get_constant_schedule_with_warmup,
@@ -10,11 +10,15 @@ from transformers import (
 from tevatron.mrag.lookahead import LookaheadRMSprop
 from tevatron.mrag.data import MTrainCollator
 from torch.utils.data import DataLoader
+from tevatron.mrag.MRetriever import mrag
 
 class MaskRetrievalAugmentGeneration(pl.LightningModule):
-    def __init__(self, model, train_dataset, hparams, val_dataset = None):
+    def __init__(self, model:mrag, train_dataset, hparams, val_dataset = None):
         super().__init__()
-        self.hparams = hparams
+        # https://lightning.ai/docs/pytorch/stable/model/manual_optimization.html
+        self.automatic_optimization = False
+        self.model = model
+        self.params = hparams
         # dataset
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
@@ -24,10 +28,10 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
     def train_dataloader(self):
         return DataLoader(
             self.train_dataset,
-            batch_size=self.hparams.train_batch_size,
+            batch_size=self.params.train_batch_size,
             collate_fn=self.data_collator,
             drop_last=True,
-            num_workers=self.hparams.dataloader_num_workers,
+            num_workers=self.params.dataloader_num_workers,
             shuffle=True,
         )
 
@@ -36,62 +40,84 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
 
             return DataLoader(
                 self.val_dataset,
-                batch_size=self.hparams.train_batch_size,
+                batch_size=self.params.train_batch_size,
                 collate_fn=self.data_collator,
                 drop_last=True,
-                num_workers=self.hparams.dataloader_num_workers,
+                num_workers=self.params.dataloader_num_workers,
                 shuffle=True,
             )
 
     def training_step(self, batch, batch_idx):
-        loss, loss_ans, loss_l0, origin_sim, sim, gates = self.model(batch)
+        optimizers = self.optimizers()
+        loss, loss_ans, loss_l0, alpha, origin_sim, sim, gates = self.model(batch)
+        # https://lightning.ai/docs/pytorch/stable/model/manual_optimization.html
+        optimizers[0].zero_grad()
+        optimizers[1].zero_grad()
+        self.manual_backward(loss)
+        # alpha梯度上升
+        self.model.alpha.grad *= -1
+        # clip gradients
+        self.clip_gradients(optimizers[0], gradient_clip_val=0.5, gradient_clip_algorithm="norm")
+        self.clip_gradients(optimizers[1], gradient_clip_val=0.5, gradient_clip_algorithm="norm")
+
+        optimizers[0].step()
+        optimizers[1].step()
+
+        self.constrain_alpha()
+        
+        # multiple schedulers
+        sch1, sch2 = self.lr_schedulers()
+        sch1.step()
+        sch2.step()
+
+        
+        
         self.log_dict({
                 "loss_ans": float(loss_ans), 
                 "loss_step":float(loss),
                 "loss_l0":float(loss_l0),
+                "alpha": float(self.model.alpha),
+                "alpha grad": float(self.model.alpha.grad),
                 "mean sim":float(torch.mean(origin_sim)),
                 "max sim":float(torch.max(origin_sim)),
                 "min sim":float(torch.min(origin_sim)),
                 "mean logits":float(torch.mean(sim)),
                 "mean gates":float(torch.mean(gates))
-                }, logger=True)
-        return loss
+                }, logger=True, prog_bar=True)
+        
+        for n, p in self.model.mdense.named_parameters():
+            if p.requires_grad == True and p.grad is not None:
+                self.log_dict({str(n):float(torch.mean(p.grad))}, logger=True)
 
     def validation_step(self, batch, batch_idx):
-        loss, loss_ans, loss_l0, _, _, _ = self.model(batch)
+        loss, loss_ans, loss_l0, alpha, _, _, _ = self.model(batch)
         metrics = {
                 "val_loss_ans": float(loss_ans), 
                 "val_loss_step":float(loss),
                 "val_loss_l0":float(loss_l0),
                 }
-        self.log_dict(metrics, logger=True)
+        self.log_dict(metrics, logger=True, prog_bar=True)
         return metrics
 
     def configure_optimizers(self):
         optimizers = [
-            LookaheadRMSprop(
+            torch.optim.Adam(
                 params=[
                     {
-                        "params": self.gate.g_hat.parameters(),
-                        "lr": self.hparams.learning_rate,
+                        "params": self.model.mdense.parameters(),
+                        "lr": self.params.learning_rate,
                     },
                     {
-                        "params": self.gate.placeholder.parameters()
-                        if isinstance(self.gate.placeholder, torch.nn.ParameterList)
-                        else [self.gate.placeholder],
-                        "lr": self.hparams.learning_rate_placeholder,
+                        "params": [self.model.bias],
+                        "lr": self.params.learning_rate,
                     },
-                ],
-                centered=True,
+                ]
             ),
-            LookaheadRMSprop(
-                params=[self.alpha]
-                if isinstance(self.alpha, torch.Tensor)
-                else self.alpha.parameters(),
-                lr=self.hparams.learning_rate_alpha,
+            torch.optim.Adam(
+                params=[self.model.alpha],
+                lr=self.params.learning_rate_alpha,
             ),
         ]
-
         schedulers = [
             {
                 "scheduler": get_constant_schedule_with_warmup(optimizers[0], 24 * 50),
@@ -101,41 +127,15 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         ]
         return optimizers, schedulers
 
-    def optimizer_step(
-        self,
-        current_epoch,
-        batch_idx,
-        optimizer,
-        optimizer_idx,
-        second_order_closure=None,
-    ):
-        if optimizer_idx == 0:
-            optimizer.step()
-            optimizer.zero_grad()
-            for g in optimizer.param_groups:
-                for p in g["params"]:
-                    p.grad = None
-
-        elif optimizer_idx == 1:
-            # 优化alpha时反转梯度，对应lagrange relaxation中的max min
-            for i in range(len(self.alpha)):
-                if self.alpha[i].grad:
-                    self.alpha[i].grad *= -1
-
-            optimizer.step()
-            optimizer.zero_grad()
-            for g in optimizer.param_groups:
-                for p in g["params"]:
-                    p.grad = None
+    def constrain_alpha(self):
             # 保证在0--200之间
-            for i in range(len(self.alpha)):
-                self.alpha[i].data = torch.where(
-                    self.alpha[i].data < 0,
-                    torch.full_like(self.alpha[i].data, 0),
-                    self.alpha[i].data,
-                )
-                self.alpha[i].data = torch.where(
-                    self.alpha[i].data > 200,
-                    torch.full_like(self.alpha[i].data, 200),
-                    self.alpha[i].data,
-                )
+            self.model.alpha.data = torch.where(
+                self.model.alpha.data < 0,
+                torch.full_like(self.model.alpha.data, 0),
+                self.model.alpha.data,
+            )
+            self.model.alpha.data = torch.where(
+                self.model.alpha.data > 200,
+                torch.full_like(self.model.alpha.data, 200),
+                self.model.alpha.data,
+            )
