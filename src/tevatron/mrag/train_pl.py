@@ -78,7 +78,7 @@ def main():
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=hparams.output_dir)
     # , strategy='auto'
     trainer = pl.Trainer(
-    accelerator="gpu", devices=1,
+    accelerator="gpu", devices='auto', strategy='ddp_find_unused_parameters_true',
     logger=tb_logger,
 
     default_root_dir=hparams.output_dir,

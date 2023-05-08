@@ -109,10 +109,16 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
             gates=gates,
             placeholder=self.mdense.placeholder
         )
-        loss = self.alpha*(loss_ans-self.eps) + loss_l0
+        # 计算loss差
+        origin_loss_ans, origin_logits = self.fid(input_ids=fid_p_ids, attention_mask=fid_p_mask, labels=fid_a, return_dict=False)[:2]
+        div_loss_ans = loss_ans - origin_loss_ans
+        loss = self.alpha*( div_loss_ans - self.eps) + loss_l0
+
         logging.debug("loss_ans: {}".format(loss_ans))
+        logging.debug("origin_loss_ans: {}".format(origin_loss_ans))
+        logging.debug("div_loss_ans : {}".format(div_loss_ans))
         # loss = loss_ans
-        return loss, loss_ans, loss_l0, self.alpha, origin_sim, sim, gates
+        return loss, div_loss_ans, loss_l0, self.alpha, origin_sim, sim, gates
 
     def forward_sim(self, inputs):
         # inputs 应该是q,p,(labels, context_ids, context_mask)
