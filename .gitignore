@@ -1,0 +1,16 @@
+.idea/
+__pycache__/
+*.egg-info/
+intermediate/
+data_*
+intermediate*
+model_nq/
+model_trivia/
+model_kl/
+nq_reader_base/
+mrag_output/
+4*
+save/
+model_nq_/
+model_*/
+tevatron_nq_corpus/
