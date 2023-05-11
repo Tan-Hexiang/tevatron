@@ -54,7 +54,7 @@ def main():
         format='%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
         datefmt="%m/%d/%Y %H:%M:%S",
         # if os.environ.get('LOCAL_RANK') in [-1, 0, 1] else logging.WARN
-        level=logging.DEBUG,
+        level=logging.INFO,
         handlers=[logging.FileHandler(log_path, mode='w'),
                               stream_handler]
     )
@@ -92,7 +92,7 @@ def main():
     enable_checkpointing=True,
     # enable_progress_bar=False,
     # barebones=True,
-    num_sanity_val_steps=2,
+    num_sanity_val_steps=10,
     profiler=False,
     )
 

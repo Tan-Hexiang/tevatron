@@ -10,6 +10,7 @@ from transformers import (
     T5Tokenizer
 )
 from statistics import mean, median
+import random
 import os
 from tevatron.mrag.data import HFMTrainDataset, MTrainCollator, MTrainDataset
 from tevatron.mrag.lookahead import LookaheadRMSprop
@@ -297,71 +298,99 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         indices = indices[:, :k]
 
         # bsz, n_context, len    
+        scores = batch['scores']
         fid_a, fid_p_ids, fid_p_mask = batch['fid_answer_ids'], batch['fid_passage_ids'], batch['fid_passage_mask']
         batch_gold_ans = batch['raw_answers']
         new_fid_p_ids, new_fid_p_mask = [], []
         #  bsz,n_context,len
-        logging.debug("fid_p_ids shape {}".format(fid_p_ids.shape))
         for line in range(fid_a.shape[0]):
             new_fid_p_ids.append(torch.index_select(fid_p_ids[line], dim=0, index=indices[line]))
             new_fid_p_mask.append(torch.index_select(fid_p_mask[line], dim=0, index=indices[line]))
         new_fid_p_ids = torch.stack(new_fid_p_ids,dim=0)
         new_fid_p_mask = torch.stack(new_fid_p_mask, dim=0)
         # 释放显存
-        del fid_p_ids, fid_p_mask, batch, batch_idx
+        del fid_p_mask, batch
         # generate
-        logging.debug("new_fid_p_ids shape:{}".format(new_fid_p_ids.shape))
         outputs = self.fid.generate(
                     input_ids=new_fid_p_ids,
                     attention_mask=new_fid_p_mask,
                     max_length=50,
                 )
-        
+        # 计算EM
+        ans_list, gold_list, em_list = [], [], []
         for k, o in enumerate(outputs):
             ans = self.fid_tokenizer.decode(o, skip_special_tokens=True)
             gold_ans = batch_gold_ans[k]
             # 与fid相同的em指标，包含多答案和answer normilize，如小写，去除标点和空格等，详细见fid论文实验部分
             em_score = ems(ans, gold_ans)
             self.em.append(em_score)
-            logging.debug("ans: {}".format(ans))
-            logging.debug("gold_ans : {}".format(gold_ans))
-            logging.debug("em_score : {}".format(em_score))
+
+            ans_list.append(ans)
+            gold_list.append(gold_ans)
+            em_list.append(em_score)
+            
+        # debug output to files
+        if batch_idx ==2 or batch_idx ==10 or batch_idx==0:
+            output_dir = self.trainer.default_root_dir+"/debug_output/"
+            if not os.path.exists(output_dir):
+                 os.makedirs(output_dir, exist_ok=True)
+            with open(output_dir+'batchid_{}_epoch_{}_step_{}_rand{}.txt'.format(batch_idx, self.current_epoch, self.global_step, random.randint(1, 10000)),'w') as f:
+                f.write("----batch idx: {}----\n".format(batch_idx))
+                f.write("scores: {}\n".format(scores))
+                f.write("sim : {}\n".format(sim))
+                f.write("indices[:,:k]: {}\n".format(indices))
+                f.write("ans: {}\n".format(ans_list))
+                f.write("gold_ans : {}\n".format(gold_list))
+                f.write("em_score : {}\n".format(em_list))
+                bsz = fid_p_ids.shape[0]
+                n_context= fid_p_ids.shape[1]
+                passages = self.fid_tokenizer.batch_decode(fid_p_ids.view(bsz*n_context,-1), skip_special_tokens=True)
+                for i in range(bsz):
+                    f.write("----------------问题{}：------------------\n".format(i))
+                    for j in range(n_context):
+                        f.write("\npassage {}\n".format(j))
+                        f.write("passages: {}\n".format(passages[i*n_context+j]))
+                        # logging.info(str(i*n_context+j))
+                        f.write("scores : {}\n".format(scores[i][j]))
+                        f.write("sim: {}\n".format(sim[i,j]))
 
     def validation_step_debug(self, batch, bacth_idx):
          # inputs 应该是q,p,(labels, context_ids, context_mask)
-        # dpr_q, dpr_p = batch['dpr_question'], batch['dpr_passages']
+        dpr_q, dpr_p = batch['dpr_question'], batch['dpr_passages']
         fid_a, fid_p_ids, fid_p_mask = batch['fid_answer_ids'], batch['fid_passage_ids'], batch['fid_passage_mask']
-        # bsz = dpr_q['input_ids'].shape[0]
-        # n_context = int(dpr_p['input_ids'].shape[0]/bsz)
+        bsz = fid_p_ids.shape[0]
+        n_context = fid_p_ids.shape[1]
+        assert bsz == 1
+        assert n_context==20
 
-        # question_rep = self.mdense.encode_query(dpr_q)
-        # passages_rep = self.mdense.encode_passage(dpr_p)
+        question_rep = self.mdense.encode_query(dpr_q)
+        passages_rep = self.mdense.encode_passage(dpr_p)
         # # 释放显存
-        # del dpr_p, dpr_q
-        # # bsz, b_passages
-        # sim = torch.einsum(
-        #     'bd,bid->bi',
-        #     question_rep,
-        #     passages_rep.view(bsz, n_context, -1)
-        # )
-        # # 释放显存
-        # del question_rep, passages_rep
-        # # 控制初始score范围
-        # MIN, MAX = torch.min(sim), torch.max(sim)
-        # sim = 20 * ( (sim - MIN)/(MAX - MIN + 0.00001) - 0.5 ) + self.bias
+        del dpr_p, dpr_q
+        # bsz, b_passages
+        sim = torch.einsum(
+            'bd,bid->bi',
+            question_rep,
+            passages_rep.view(bsz, n_context, -1)
+        )
+        # 释放显存
+        del question_rep, passages_rep
+        # 控制初始score范围
+        MIN, MAX = torch.min(sim), torch.max(sim)
+        sim = 20 * ( (sim - MIN)/(MAX - MIN + 0.00001) - 0.5 ) + self.bias
 
-        # dist = RectifiedStreched(
-        #     BinaryConcrete(torch.full_like(sim, 0.2), sim), l=-0.2, r=1.1,
-        # )
-        # # bsz, b_passages
-        # gates = dist.rsample()
-        # gates = torch.full((bsz,n_context),1.0).cuda()
-        # gates = torch.full_like(gates,1.0)
-        # gates[:,-1] = 0.0
+        dist = RectifiedStreched(
+            BinaryConcrete(torch.full_like(sim, 0.2), sim), l=-0.2, r=1.1,
+        )
+        # bsz, b_passages
+        gates = dist.rsample()
+        gates = torch.full((bsz,n_context),1.0).cuda()
+        gates = torch.full_like(gates,1.0)
+        gates[:,0] = 0.0
 
-        # # expected_l0 = dist.expected_L0()
-        # # logging.info("n_context {}  bsz {}".format(n_context,bsz))
-        # logging.debug("gates: {}  {}".format(gates.shape,gates))
+        # expected_l0 = dist.expected_L0()
+        # logging.info("n_context {}  bsz {}".format(n_context,bsz))
+        logging.debug("gates: {}  {}".format(gates.shape,gates))
 
         loss_ans, logits = self.fid(input_ids=fid_p_ids, attention_mask=fid_p_mask, labels=fid_a, return_dict=False)[:2]
         
@@ -370,9 +399,14 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         # loss = self.alpha*(loss_ans-self.eps) + loss_l0
         # logging.debug("loss_ans: {}".format(loss_ans))
         self.log_dict({"nomask_loss_ans":loss_ans}, on_step=True, prog_bar=True)
+    
+    def on_validation_epoch_debug(self):
+        # debug
+        loss_ans_mean = mean(self.loss_ans)
+        logging.info("loss_ans mean:{}".format(loss_ans_mean))
+        logging.info("loss_ans median:{}".format(median(self.loss_ans)))
 
     def on_validation_epoch_end(self) :
-        
         em_mean = sum(self.em) / len(self.em)
         # 清空现有结果
         self.em = []
@@ -380,10 +414,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         self.log("em", em_mean, sync_dist=True)
         if self.global_step!=0:
             self.save_top_3_model(em_mean)
-        # debug
-        # loss_ans_mean = mean(self.loss_ans)
-        # logging.info("loss_ans mean:{}".format(loss_ans_mean))
-        # logging.info("loss_ans median:{}".format(median(self.loss_ans)))
+        
 
 
     def configure_optimizers(self):
@@ -418,11 +449,11 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         ]
         return optimizers, schedulers
     
-    def on_train_epoch_end(self) -> None:
-        output_dir = self.trainer.default_root_dir + '/mdense_at_epoch' + str(self.current_epoch) +'_step_'+str(self.global_step)
-        os.makedirs(output_dir, exist_ok=True)
-        self.mdense.save(output_dir=output_dir)
-        return super().on_train_epoch_end()
+    # def on_train_epoch_end(self) -> None:
+    #     output_dir = self.trainer.default_root_dir + '/mdense_model_at_epoch' + str(self.current_epoch) +'_step_'+str(self.global_step)+'rand'+str(random.randint(0,9999))
+    #     os.makedirs(output_dir, exist_ok=True)
+    #     self.mdense.save(output_dir=output_dir)
+    #     # return super().on_train_epoch_end()
 
     def constrain_alpha(self):
             self.alpha.data = torch.where(
