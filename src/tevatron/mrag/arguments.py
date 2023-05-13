@@ -75,6 +75,7 @@ class MTrainArguments():
     alpha:float = field(default=15.0,metadata={"help":"初始化的拉格朗日乘子"})
     alpha_up_constrain:float = field(default=2000.0)
     bias:float = field(default=5.0)
+    temperature: float=field(default=4.0)
     # 学习率
     learning_rate: float =field(default=1e-5)
     learning_rate_alpha: float = field(default=1e-4)

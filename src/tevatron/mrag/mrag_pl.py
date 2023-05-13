@@ -44,6 +44,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         config = AutoConfig.from_pretrained(self.model_args.model_name_or_path, num_labels=1, cache_dir=model_args.cache_dir,)
         self.mdense = MDenseModel.build(model_args, hparams, config=config)
         # other parameters
+        self.temperature = self.params.temperature
         self.n_context = self.data_args.n_context
         self.eps = self.params.eps
         self.alpha = torch.nn.Parameter(torch.tensor(self.params.alpha), requires_grad=True)
@@ -53,6 +54,10 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         self.top_3_em = []
         # debug
         self.loss_ans = []
+
+    def temperature_scaled_softmax(self, logits, temperature=4.0):
+        logits = logits / temperature
+        return torch.softmax(logits, dim=-1)
     
     def forward(self, inputs):
         # inputs 应该是q,p,(labels, context_ids, context_mask)
@@ -61,10 +66,10 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         bsz = dpr_q['input_ids'].shape[0]
         n_context = int(dpr_p['input_ids'].shape[0]/bsz)
         
-        logging.debug("n_context :{}".format(n_context))
-        logging.debug("bsz :{}".format(bsz))
-        logging.debug("dpr_p['input_ids'].shape: {}".format(dpr_p['input_ids'].shape))
-        logging.debug("dpr_q['input_ids'].shape: {}".format(dpr_q['input_ids'].shape))
+        # logging.debug("n_context :{}".format(n_context))
+        # logging.debug("bsz :{}".format(bsz))
+        # logging.debug("dpr_p['input_ids'].shape: {}".format(dpr_p['input_ids'].shape))
+        # logging.debug("dpr_q['input_ids'].shape: {}".format(dpr_q['input_ids'].shape))
         question_rep = self.mdense.encode_query(dpr_q)
         passages_rep = self.mdense.encode_passage(dpr_p)
         # logging.debug("question_rep: {}".format(question_rep))
@@ -84,18 +89,22 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         # logging.debug("origin sim:{}".format(origin_sim))
         # minmax normalization then constrain to (-10,10)
         # MIN, MAX = 99, 132
-        MIN, MAX = torch.min(sim), torch.max(sim)
-        sim = 20 * ( (sim - MIN)/(MAX - MIN + 0.00001) - 0.5 ) + self.bias
+        # MIN, MAX = torch.min(sim), torch.max(sim)
+        # sim = 20 * ( (sim - MIN)/(MAX - MIN + 0.00001) - 0.5 ) + self.bias
         # logging.debug("constrained sim: {}".format(str(sim)))
         # sim = self.f(sim)* self.max_activation + self.bias_out
+        # sim = 20 * self.temperature_scaled_softmax(sim, temperature=self.params.temperature) + self.bias
+        sim = 10* torch.tanh(sim/50.0) + self.bias
 
+        logging.debug("sim : {}".format(sim))
         dist = RectifiedStreched(
             BinaryConcrete(torch.full_like(sim, 0.2), sim), l=-0.2, r=1.1,
         )
+
+        
         # bsz, b_passages
         gates = dist.rsample()
         expected_l0 = dist.expected_L0()
-        logging.debug("fid_p_ids: {}".format(fid_p_ids))
         logging.debug("gates: {}".format(gates))
         logging.debug("expected_l0: {}".format(expected_l0))
         # scalar
@@ -246,6 +255,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 "loss_step":float(loss),
                 "loss_l0":float(loss_l0),
                 "alpha value": float(self.alpha),
+                "bias": float(self.bias),
                 # "mean sim":float(torch.mean(origin_sim)),
                 # "max sim":float(torch.max(origin_sim)),
                 # "min sim":float(torch.min(origin_sim)),
@@ -253,6 +263,8 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 # "mean gates":float(torch.mean(gates))
                 }, logger=True, prog_bar=True)
         
+        logging.debug("bias gradient : {}".format(self.bias.grad))
+        logging.debug("alpha gradient : {}".format(self.alpha.grad))
         # for n, p in self.named_parameters():
         #     if p.requires_grad == True and p.grad is not None:
         #         self.log_dict({str(n):float(torch.mean(p.grad))}, logger=True)
@@ -427,7 +439,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                     },
                     {
                         "params": [self.bias],
-                        "lr": self.params.learning_rate,
+                        "lr": self.params.learning_rate*10,
                     },
                 ]
             ),
@@ -468,7 +480,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
             )
 
     def save_top_3_model(self, current_em):
-        output_dir = self.trainer.default_root_dir + '/mdense_at'+'_em_'+str(current_em)+'_global_step_'+str(self.global_step)+'_epoch_'+str(self.current_epoch)
+        output_dir = self.trainer.default_root_dir + '/mdense_at'+'_em_'+str(current_em)+'_global_step_'+str(self.global_step)+'_epoch_'+str(self.current_epoch)+'_rand'+str(random.randint(0,9999))
         logging.info("Current top_3_em: {}".format(self.top_3_em))
         if len(self.top_3_em)<3:
             self.top_3_em.append(current_em)

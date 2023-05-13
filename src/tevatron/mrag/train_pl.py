@@ -54,7 +54,7 @@ def main():
         format='%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
         datefmt="%m/%d/%Y %H:%M:%S",
         # if os.environ.get('LOCAL_RANK') in [-1, 0, 1] else logging.WARN
-        level=logging.INFO,
+        level=logging.DEBUG,
         handlers=[logging.FileHandler(log_path, mode='w'),
                               stream_handler]
     )
