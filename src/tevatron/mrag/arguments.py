@@ -20,6 +20,7 @@ class MDataArguments(DataArguments):
         default=100, metadata={"help": "ctxs num"}
     )
     val_n_context: int = field(default=10)
+    negative_ratio: float = field(default=0)
 
     # tokenizer
     fid_question_prefix:  str = field(

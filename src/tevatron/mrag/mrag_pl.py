@@ -86,17 +86,13 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
         del question_rep, passages_rep
         # 控制初始score范围
         origin_sim = sim
-        # logging.debug("origin sim:{}".format(origin_sim))
-        # minmax normalization then constrain to (-10,10)
-        # MIN, MAX = 99, 132
-        # MIN, MAX = torch.min(sim), torch.max(sim)
-        # sim = 20 * ( (sim - MIN)/(MAX - MIN + 0.00001) - 0.5 ) + self.bias
+        MIN, MAX = torch.min(sim, -1, keepdim=True), torch.max(sim, -1, keepdim=True)
+        sim = 20 * ( (sim - MIN)/(MAX - MIN + 0.00001)) + self.bias
         # logging.debug("constrained sim: {}".format(str(sim)))
         # sim = self.f(sim)* self.max_activation + self.bias_out
-        # sim = 20 * self.temperature_scaled_softmax(sim, temperature=self.params.temperature) + self.bias
-        sim = 10* torch.tanh(sim/50.0) + self.bias
+        # sim = 10 * self.temperature_scaled_softmax(sim, temperature=self.params.temperature) + self.bias
+        # sim = 10* torch.tanh(sim/50.0) + self.bias
 
-        # logging.debug("sim : {}".format(sim))
         dist = RectifiedStreched(
             BinaryConcrete(torch.full_like(sim, 0.2), sim), l=-0.2, r=1.1,
         )
@@ -119,16 +115,15 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
             gates=gates,
             placeholder=self.mdense.placeholder
         )
-        # 计算loss差
-        origin_loss_ans, origin_logits = self.fid(input_ids=fid_p_ids, attention_mask=fid_p_mask, labels=fid_a, return_dict=False)[:2]
-        div_loss_ans = loss_ans - origin_loss_ans
-        loss = self.alpha*( div_loss_ans - self.eps) + loss_l0
+
+        # origin_loss_ans, origin_logits = self.fid(input_ids=fid_p_ids, attention_mask=fid_p_mask, labels=fid_a, return_dict=False)[:2]
+        loss = self.alpha*( loss_l0 - self.eps) + loss_ans
 
         # logging.debug("loss_ans: {}".format(loss_ans))
         # logging.debug("origin_loss_ans: {}".format(origin_loss_ans))
         # logging.debug("div_loss_ans : {}".format(div_loss_ans))
         # loss = loss_ans
-        return loss, div_loss_ans, loss_l0, self.alpha, origin_sim, sim, gates
+        return loss, loss_ans, loss_l0, self.alpha, origin_sim, sim, gates
 
     def forward_sim(self, inputs):
         # inputs 应该是q,p,(labels, context_ids, context_mask)
@@ -222,9 +217,9 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 else:
                     batch[k] = batch[k].repeat(self.params.sample_num, 1)
 
-            loss, loss_ans, loss_l0, _, _, _, _ = self(batch)
+            loss, loss_ans, loss_l0, alpha, origin_sim, sim, gates = self(batch)
         else:
-            loss, loss_ans, loss_l0, _, _, _, _ = self(batch)
+            loss, loss_ans, loss_l0, alpha, origin_sim, sim, gates = self(batch)
         
         # https://lightning.ai/docs/pytorch/stable/model/manual_optimization.html
         optimizers[0].zero_grad()
@@ -264,6 +259,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                 }, logger=True, prog_bar=True)
         
         if batch_idx %500 == 0 or batch_idx<3:
+            logging.debug("----------------{}-----------------".format(batch_idx))
             logging.debug("{}".format({
                     "loss_ans": float(loss_ans), 
                     "loss_step":float(loss),
@@ -271,6 +267,8 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                     "alpha value": float(self.alpha),
                     "bias": float(self.bias),
                     }))
+            logging.debug("origin sim: {}".format(origin_sim))
+            logging.debug("sim : {}".format(sim))
             logging.debug("bias gradient : {}".format(self.bias.grad))
             logging.debug("alpha gradient : {}".format(self.alpha.grad))
             for n, p in self.named_parameters():
@@ -447,7 +445,7 @@ class MaskRetrievalAugmentGeneration(pl.LightningModule):
                     },
                     {
                         "params": [self.bias],
-                        "lr": self.params.learning_rate_alpha,
+                        "lr": self.params.learning_rate,
                     },
                 ]
             ),

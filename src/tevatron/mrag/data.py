@@ -8,7 +8,7 @@ from transformers import  PreTrainedTokenizer, BatchEncoding, AutoTokenizer
 from tevatron.mrag.arguments import MDataArguments
 from datasets import load_dataset, load_from_disk
 import logging
-
+import random
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +28,11 @@ class MPreProcessor:
             logging.info("datasets use val_n_context {}".format(self.n_context))
         else:
             logging.error("unexpected mode in MPreProcessor.")
+
+    def get_random_passage(self):
+        # 0--21015323
+        index = random.randint(0,21015323)
+        return self.corpus[index]['title'], self.corpus[index]['text']
 
     def __call__(self, example):
 
@@ -55,6 +60,8 @@ class MPreProcessor:
         dpr_passages = []
         fid_passages = []
         scores = []
+        f = self.data_args.fid_title_prefix + " {} " + self.data_args.fid_passage_prefix + " {}"
+        fid_question = self.data_args.fid_question_prefix + ' ' + example['question']
         for ctxs in example['ctxs'][:self.n_context]:
             scores.append(ctxs['score'])
             # 匹配正文
@@ -68,11 +75,20 @@ class MPreProcessor:
                                                       max_length=self.data_args.dpr_passage_len,
                                                       truncation=True))
             # fid
-            f = self.data_args.fid_title_prefix + " {} " + self.data_args.fid_passage_prefix + " {}"
-            fid_question = self.data_args.fid_question_prefix + ' ' + example['question']
             fid_passage = f.format(ctxs['title'], ctxs['text'])
             fid_passage = fid_question + ' ' + fid_passage
             fid_passages.append(fid_passage)
+
+        # random negative
+        if self.data_args.negative_ratio!=0:
+            negative_begin = len(fid_passages)*self.data_args.negative_ratio
+            for i in range(negative_begin,len(fid_passages)):
+                title, text = self.get_random_passage()
+                fid_passage = f.format(title, text)
+                fid_passage = fid_question + ' ' + fid_passage
+                fid_passages[i] = fid_passage
+                scores[i] = -1
+
         # fid tokenizer
         fid_passages = self.fid_tokenizer.batch_encode_plus(
             fid_passages,
@@ -81,7 +97,6 @@ class MPreProcessor:
             return_tensors='pt',
             truncation=True
         )
-        # logging.info("fid passages tokenized details: {}".format(fid_passages))
         
         fid_passage_ids = fid_passages['input_ids'][None]
         fid_passage_mask = fid_passages['attention_mask'][None]
