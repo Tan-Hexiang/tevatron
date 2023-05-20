@@ -7,11 +7,11 @@ def fid_setter(model, passage_ids, passage_masks, target_ids, n_context, gates, 
 
         temp, passage_len, dim = outputs.shape
         bsz = int(temp / n_context)
-        logging.debug("bsz {} ".format(bsz))
-        logging.debug("gates.shape[0] {}".format(gates.shape[0]))
+        # logging.debug("bsz {} ".format(bsz))
+        # logging.debug("gates.shape[0] {}".format(gates.shape[0]))
         if bsz == gates.shape[0]:
-            logging.debug("gates {}".format(gates))
-            logging.debug("origin output {}".format(outputs))
+            # logging.debug("gates {}".format(gates))
+            # logging.debug("origin output {}".format(outputs))
             
             new_encoder_embedding = outputs.view(bsz, n_context, -1)
             # bsz,n_context,len*dim
@@ -19,7 +19,7 @@ def fid_setter(model, passage_ids, passage_masks, target_ids, n_context, gates, 
                 -1)
             new_encoder_embedding = new_encoder_embedding.view(bsz * n_context, passage_len, dim)
 
-            logging.debug("new_output {}".format(new_encoder_embedding))
+            # logging.debug("new_output {}".format(new_encoder_embedding))
             # print("replace output")
             return new_encoder_embedding
 
